@@ -110,7 +110,32 @@ class CreviceEnv(gym.Env):
         total_reward /= 2000000 # Normalize for gradients
 
         return total_reward
+    
+class JointAttentionReadout(nn.Module):
+    def __init__(self, D_common, n_joints=4):
+        super().__init__()
+        
+        self.queries = nn.Parameter(torch.randn(n_joints, D_common))
 
+        self.proj1 = nn.linear(64, D_common)
+        self.proj2 = nn.linear(128, D_common)
+        self.proj3 = nn.linear(256, D_common)
+
+    def forward(self, f1, f2, f3):
+        f1 = self.proj1(f1.transpose(1, 2))
+        f2 = self.proj2(f2.transpose(1, 2))
+        f3 = self.proj3(f3.transpose(1, 2))
+
+        F = torch.cat([f1, f2, f3], dim=1)
+
+        scale = F[-1] ** 0.5
+        attn = torch.softmax(torch.einsum("bdn,jd->bjn", F, self.queries) / scale, dim=1)
+
+        readout = torch.einsum("bjn,bnd->bjd", attn, F)
+
+        return readout.flatten(1)
+
+D_common = 128
 env = CreviceEnv(enable_viewer = True)
 env.reset()
 _, reward, _, _, _ = env.step([-0.0254, 0, 0.04, 0, np.pi, 0, np.pi])
