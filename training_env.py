@@ -111,6 +111,33 @@ class CreviceEnv(gym.Env):
 
         return total_reward
     
+class PointNetExtractor(BaseFeaturesExtractor):
+    def __init__(self):
+        super().__init__(self, D_common = 128)
+        
+        # Make instance of pointnet encoder and attention network here
+        self.sa1 = PointNetSetAbstraction(
+            npoint = POINT_CLOUD_DIM, radius="R1", nsample=32,
+            in_channel=3, mlp=[32, 32, 64], group_all=False
+        )
+        self.sa2 = PointNetSetAbstraction(
+            npoint = POINT_CLOUD_DIM, radius="R2", nsample=32,
+            in_channel=64+3, mlp=[64, 64, 128], group_all=False
+        )
+        self.sa1 = PointNetSetAbstraction(
+            npoint = POINT_CLOUD_DIM, radius="R3", nsample=32,
+            in_channel=128+3, mlp=[128, 128, 256], group_all=False
+        )
+        self.attention = JointAttentionReadout(D_common)
+
+    def forward(self, observations):
+        # observations shape: (batch, N, 4)
+        # run through PointNet++
+        # run through attention queries
+        # return (batch, features_dim)
+        features = None
+        return features
+    
 class JointAttentionReadout(nn.Module):
     def __init__(self, D_common, n_joints=4):
         super().__init__()
