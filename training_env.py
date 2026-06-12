@@ -11,11 +11,10 @@ import mujoco
 import mujoco.viewer
 import time
 
-global POINT_CLOUD_DIM
-
 class CreviceEnv(gym.Env):
     def __init__(self, enable_viewer = False):
         # Initialize gymnasium
+        global POINT_CLOUD_DIM
         self.point_cloud = np.load("geo/anchor_scene.npy")
         POINT_CLOUD_DIM = np.size(self.point_cloud, axis = 0)
         self.ref_point = np.array([-0.0254, 0, 0.04])
@@ -24,7 +23,7 @@ class CreviceEnv(gym.Env):
 
         low  = np.array([-np.inf, -np.inf, 0.0,  -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
         high = np.array([ np.inf,  np.inf, np.inf,   np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(POINT_CLOUD_DIM, 7), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(POINT_CLOUD_DIM, 3), dtype=np.float32)
         self.action_space = spaces.Box(low=low, high=high, shape=(7,), dtype=np.float32)
 
         # Initialize Mujoco
@@ -103,17 +102,17 @@ class CreviceEnv(gym.Env):
 
         module_mass = 0.255
         center_tether_mass = 0.5
-        robot_weight = (module_mass * 18 + center_tether_mass) / 9.80665
-        kp = 1e7 # Scaling term to not let friction cone volume dominate
+        robot_weight = (module_mass * 18 + center_tether_mass) * 9.80665
+        kp = 0.2 # Scaling term to not let friction cone volume dominate
         total_reward -= kp * (robot_weight ** 2) # Square so units agree
 
-        total_reward /= 2000000 # Normalize for gradients
+        total_reward /= 800 # Normalize for gradients
 
         return total_reward
     
 class PointNetExtractor(BaseFeaturesExtractor):
-    def __init__(self):
-        super().__init__(self, D_common = 128)
+    def __init__(self, D_common = 128):
+        super().__init__(self)
         
         # Make instance of pointnet encoder and attention network here
         self.sa1 = PointNetSetAbstraction(
@@ -121,11 +120,11 @@ class PointNetExtractor(BaseFeaturesExtractor):
             in_channel=3, mlp=[32, 32, 64], group_all=False
         )
         self.sa2 = PointNetSetAbstraction(
-            npoint = POINT_CLOUD_DIM, radius="R2", nsample=32,
+            npoint = POINT_CLOUD_DIM//4, radius="R2", nsample=32,
             in_channel=64+3, mlp=[64, 64, 128], group_all=False
         )
-        self.sa1 = PointNetSetAbstraction(
-            npoint = POINT_CLOUD_DIM, radius="R3", nsample=32,
+        self.sa3 = PointNetSetAbstraction(
+            npoint = POINT_CLOUD_DIM//16, radius="R3", nsample=32,
             in_channel=128+3, mlp=[128, 128, 256], group_all=False
         )
         self.attention = JointAttentionReadout(D_common)
@@ -133,37 +132,57 @@ class PointNetExtractor(BaseFeaturesExtractor):
     def forward(self, observations):
         # observations shape: (batch, N, 4)
         # run through PointNet++
+        xyz1, f1 = self.sa1.forward(observations, None)
+        xyz2, f2 = self.sa2.forward(xyz1, f1)
+        xyz3, f3 = self.sa3.forward(xyz2, f2)
+
         # run through attention queries
+        features = self.attention.forward(f1, f2, f3)
+
         # return (batch, features_dim)
-        features = None
         return features
     
 class JointAttentionReadout(nn.Module):
     def __init__(self, D_common, n_joints=4):
         super().__init__()
-        
+        self.scale = D_common ** 0.5
+
         self.queries = nn.Parameter(torch.randn(n_joints, D_common))
 
-        self.proj1 = nn.linear(64, D_common)
-        self.proj2 = nn.linear(128, D_common)
-        self.proj3 = nn.linear(256, D_common)
+        self.proj1 = nn.Linear(64, D_common)
+        self.proj2 = nn.Linear(128, D_common)
+        self.proj3 = nn.Linear(256, D_common)
 
     def forward(self, f1, f2, f3):
         f1 = self.proj1(f1.transpose(1, 2))
         f2 = self.proj2(f2.transpose(1, 2))
         f3 = self.proj3(f3.transpose(1, 2))
 
-        F = torch.cat([f1, f2, f3], dim=1)
+        features = torch.cat([f1, f2, f3], dim=1)
 
-        scale = F[-1] ** 0.5
-        attn = torch.softmax(torch.einsum("bdn,jd->bjn", F, self.queries) / scale, dim=1)
+        attn = torch.softmax(torch.einsum("bdn,jd->bjn", features, self.queries) / self.scale, dim=1)
 
-        readout = torch.einsum("bjn,bnd->bjd", attn, F)
+        readout = torch.einsum("bjn,bnd->bjd", attn, features)
 
         return readout.flatten(1)
 
 D_common = 128
-env = CreviceEnv(enable_viewer = True)
+env = CreviceEnv()
 env.reset()
-_, reward, _, _, _ = env.step([-0.0254, 0, 0.04, 0, np.pi, 0, np.pi])
+_, reward, _, _, _ = env.step([-0.0254, 0, 0.04, 0, 0, 0, 0])
 print(reward)
+
+# policy_kwargs = dict(
+#     features_extractor_class = PointNetExtractor,
+#     features_extractor_kwargs = dict(features_dim = 4 * D_common),
+#     net_arch = dict(pi = [256, 256], qf = [256, 256])
+# )
+
+# model = SAC(
+#     "MlpPolicy",
+#     env,
+#     policy_kwargs=policy_kwargs,
+#     verbose=1
+# )
+
+# model.learn(total_timesteps = 1_000_000)
