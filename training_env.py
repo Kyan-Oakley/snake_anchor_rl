@@ -58,47 +58,60 @@ class CreviceEnv(gym.Env):
         self.data.mocap_pos[0] = action[:3]
         self.data.mocap_quat[0] = np.array([1.0, 0.0, 0.0, 0.0])
 
-        # Find contact points
-        start_time = time.time()
-        curr_time = start_time
-        while curr_time - start_time < 0.1:
-            curr_time = time.time()
+        # Settle until qvel converges or timeout
+        N_min  = 500    # wait out initial contact transients before checking
+        N_max  = 15000
+        vel_tol = 1e-3
+
+        for i in range(N_max):
             mujoco.mj_step(self.model, self.data)
             if self.enable_viewer:
                 self.viewer.sync()
+            if np.any(np.isnan(self.data.qpos)) or np.any(np.abs(self.data.qpos) > 1e6):
+                return None, -10, True, False, {}
+            if i >= N_min and np.linalg.norm(self.data.qvel) < vel_tol:
+                break
+        else:
+            fj_vel   = np.linalg.norm(self.data.qvel[:6])   # freejoint (weld oscillation)
+            joint_vel = np.linalg.norm(self.data.qvel[6:])  # hinge joints
+            print(f"Warning: did not converge after {N_max} steps — freejoint qvel={fj_vel:.4f}, joint qvel={joint_vel:.4f}")
         ncon = self.data.ncon
         geom1 = self.data.contact.geom1[:ncon]
         geom2 = self.data.contact.geom2[:ncon]
         seen_pairs = set()
         wall_contact_ids = []
         for i, (g1, g2) in enumerate(zip(geom1.tolist(), geom2.tolist())):
-            if (g1 in self.wall_geom_ids or g2 in self.wall_geom_ids):
+            if (g1 in self.wall_geom_ids) or (g2 in self.wall_geom_ids):
                 pair = (g1, g2)
                 if pair not in seen_pairs:
                     seen_pairs.add(pair)
                     wall_contact_ids.append(i)
         
         # Find and package forces
+        # mj_contactForce returns [normal, friction_x, friction_y, torque_x, torque_y, torque_z]
+        # all in the contact frame. Only the normal component defines the friction cone axis.
         contact_forces = []
         for idx in wall_contact_ids:
             contact_wrench = np.zeros(6, dtype=np.float64)
             mujoco.mj_contactForce(self.model, self.data, idx, contact_wrench)
-            contact_forces.append(contact_wrench[:3])
+            contact_forces.append(contact_wrench[0])  # normal force only
 
         # Build final elements and return
         reward = self.generate_reward(contact_forces)
         terminated = True
-        observation = truncated = info = None
+        observation = truncated = None
+        info = {}
         return observation, reward, terminated, truncated, info
     
     def generate_reward(self, contact_forces, friction_coeff=0.5):
         # Naive reward function summing total volume of friction cones then subtracting weight of robot
         total_reward = 0
         for normal_force in contact_forces:
-            cone_height = np.linalg.norm(normal_force)
+            cone_height = abs(normal_force)  # normal force magnitude along contact axis
             max_cone_width = friction_coeff * cone_height
             cone_volume = (1/3) * cone_height * np.pi * (max_cone_width ** 2)
             total_reward += cone_volume
+            print(f"cone_height: {cone_height}, cone_volume: {cone_volume}")
 
         module_mass = 0.255
         center_tether_mass = 0.5
@@ -167,10 +180,10 @@ class JointAttentionReadout(nn.Module):
         return readout.flatten(1)
 
 D_common = 128
-env = CreviceEnv()
+env = CreviceEnv(enable_viewer = True)
 env.reset()
-_, reward, _, _, _ = env.step([-0.0254, 0, 0.04, 0, 0, 0, 0])
-print(reward)
+_, reward, _, _, _ = env.step([-0.0254, 0, 0.04, 0, np.pi/2, 0, np.pi/2])
+print(f"Reward: {reward}")
 
 # policy_kwargs = dict(
 #     features_extractor_class = PointNetExtractor,

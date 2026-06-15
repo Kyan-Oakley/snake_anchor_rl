@@ -40,7 +40,7 @@
         <geom name = "mod_1_in" type="cylinder" size="0.017018000000000002 0.0127" pos ="0.0254 0.018796 0.01651" euler="1.57079632679 0 0" material="debug_col" 
                 contype="3" conaffinity="4" group="1"/>
         <joint name="joint_1" type="hinge" pos="0.0254 0.018796 0.01651" axis="0 1 0" range="-1.57079632679 1.57079632679" 
-                limited="true" damping="3.18" frictionloss="0.2"/>
+                limited="true" damping="15.0" frictionloss="0.2"/>
 
 
         <body name="mod_1_body" pos="0 0 0">
@@ -62,7 +62,7 @@
         <geom name = "mod_2_in" type="cylinder" size="0.017018000000000002 0.0127" pos ="0.0254 0.018796 0.01651" euler="1.57079632679 0 0" material="debug_col" 
                 contype="3" conaffinity="4" group="1"/>
         <joint name="joint_2" type="hinge" pos="0.0254 0.018796 0.01651" axis="0 1 0" range="-1.57079632679 1.57079632679" 
-                limited="true" damping="3.18" frictionloss="0.2"/>
+                limited="true" damping="15.0" frictionloss="0.2"/>
 
 
         <body name="mod_2_body" pos="0 0 0">
@@ -84,7 +84,7 @@
         <geom name = "mod_3_in" type="cylinder" size="0.017018000000000002 0.0127" pos ="0.0254 0.018796 0.01651" euler="1.57079632679 0 0" material="debug_col" 
                 contype="3" conaffinity="4" group="1"/>
         <joint name="joint_3" type="hinge" pos="0.0254 0.018796 0.01651" axis="0 1 0" range="-1.57079632679 1.57079632679" 
-                limited="true" damping="3.18" frictionloss="0.2"/>
+                limited="true" damping="15.0" frictionloss="0.2"/>
 
 
         <body name="mod_3_body" pos="0 0 0">
@@ -106,7 +106,7 @@
         <geom name = "mod_4_in" type="cylinder" size="0.017018000000000002 0.0127" pos ="0.0254 0.018796 0.01651" euler="1.57079632679 0 0" material="debug_col" 
                 contype="3" conaffinity="4" group="1"/>
         <joint name="joint_4" type="hinge" pos="0.0254 0.018796 0.01651" axis="0 1 0" range="-1.57079632679 1.57079632679" 
-                limited="true" damping="3.18" frictionloss="0.2"/>
+                limited="true" damping="15.0" frictionloss="0.2"/>
 
 
         <body name="mod_4_body" pos="0 0 0">
@@ -148,10 +148,8 @@
       
 
 </actuator>
-
 <equality>
     <weld body1="snake_base" body2="mod_0_in" relpose="0 0 0 1 0 0 0"/>
 </equality>
-
 </mujoco>
 
