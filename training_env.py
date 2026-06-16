@@ -21,10 +21,10 @@ class CreviceEnv(gym.Env):
 
         self.shifted_point_cloud = np.array([self.point_cloud[i] - self.ref_point for i in range(POINT_CLOUD_DIM)])
 
-        low  = np.array([-np.inf, -np.inf, 0.0,  -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
-        high = np.array([ np.inf,  np.inf, np.inf,   np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
+        low  = np.array([-np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
+        high = np.array([np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(POINT_CLOUD_DIM, 3), dtype=np.float32)
-        self.action_space = spaces.Box(low=low, high=high, shape=(7,), dtype=np.float32)
+        self.action_space = spaces.Box(low=low, high=high, shape=(4,), dtype=np.float32)
 
         # Initialize Mujoco
         self.model = mujoco.MjModel.from_xml_path("geo/xml_anchor_scene.xml")
@@ -43,9 +43,6 @@ class CreviceEnv(gym.Env):
     def reset(self, seed=None):
         # Reset Mujoco environment
         mujoco.mj_resetData(self.model, self.data)
-        mocap_id = self.model.body_mocapid[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'snake_base')]
-        self.data.mocap_pos[mocap_id] = self.ref_point
-        self.data.mocap_quat[mocap_id] = np.array([1.0, 0.0, 0.0, 0.0])
 
         # Find and extract point cloud info
         observation = self.shifted_point_cloud
@@ -53,15 +50,13 @@ class CreviceEnv(gym.Env):
         return observation, info
 
     def step(self, action):
-        # Set joint angles and base pos in mujoco
-        self.data.ctrl[:] = action[3:]
-        self.data.mocap_pos[0] = action[:3]
-        self.data.mocap_quat[0] = np.array([1.0, 0.0, 0.0, 0.0])
+        # Set joint angles in mujoco
+        self.data.ctrl[:] = action
 
         # Settle until qvel converges or timeout
         N_min  = 500    # wait out initial contact transients before checking
-        N_max  = 15000
-        vel_tol = 1e-3
+        N_max  = 8000
+        vel_tol = 0.1
 
         for i in range(N_max):
             mujoco.mj_step(self.model, self.data)
@@ -69,12 +64,17 @@ class CreviceEnv(gym.Env):
                 self.viewer.sync()
             if np.any(np.isnan(self.data.qpos)) or np.any(np.abs(self.data.qpos) > 1e6):
                 return None, -10, True, False, {}
-            if i >= N_min and np.linalg.norm(self.data.qvel) < vel_tol:
+            if i >= N_min and np.linalg.norm(self.data.qvel[6:]) < vel_tol:
+                print(f"Converged after {i} steps")
                 break
         else:
-            fj_vel   = np.linalg.norm(self.data.qvel[:6])   # freejoint (weld oscillation)
-            joint_vel = np.linalg.norm(self.data.qvel[6:])  # hinge joints
-            print(f"Warning: did not converge after {N_max} steps — freejoint qvel={fj_vel:.4f}, joint qvel={joint_vel:.4f}")
+            print(f"Warning: did not converge after {N_max} steps — joint qvel={self.data.qvel[-4:]}")
+
+        # Zero velocity and recompute contacts/forces statically — decouples force
+        # measurement from transition dynamics regardless of whether simulation converged.
+        self.data.qvel[:] = 0
+        mujoco.mj_forward(self.model, self.data)
+
         ncon = self.data.ncon
         geom1 = self.data.contact.geom1[:ncon]
         geom2 = self.data.contact.geom2[:ncon]
@@ -91,10 +91,13 @@ class CreviceEnv(gym.Env):
         # mj_contactForce returns [normal, friction_x, friction_y, torque_x, torque_y, torque_z]
         # all in the contact frame. Only the normal component defines the friction cone axis.
         contact_forces = []
-        for idx in wall_contact_ids:
+        for i, idx in enumerate(wall_contact_ids):
             contact_wrench = np.zeros(6, dtype=np.float64)
             mujoco.mj_contactForce(self.model, self.data, idx, contact_wrench)
             contact_forces.append(contact_wrench[0])  # normal force only
+            g1_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, self.data.contact[idx].geom1)
+            g2_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, self.data.contact[idx].geom2)
+            print(contact_wrench[0], g1_name, g2_name)
 
         # Build final elements and return
         reward = self.generate_reward(contact_forces)
@@ -104,22 +107,14 @@ class CreviceEnv(gym.Env):
         return observation, reward, terminated, truncated, info
     
     def generate_reward(self, contact_forces, friction_coeff=0.5):
-        # Naive reward function summing total volume of friction cones then subtracting weight of robot
-        total_reward = 0
-        for normal_force in contact_forces:
-            cone_height = abs(normal_force)  # normal force magnitude along contact axis
-            max_cone_width = friction_coeff * cone_height
-            cone_volume = (1/3) * cone_height * np.pi * (max_cone_width ** 2)
-            total_reward += cone_volume
-            print(f"cone_height: {cone_height}, cone_volume: {cone_volume}")
+        # Sum max friction force per contact (linear in normal force, avoids cubic cone volume scaling)
+        total_friction = sum(friction_coeff * abs(f) for f in contact_forces)
 
         module_mass = 0.255
         center_tether_mass = 0.5
         robot_weight = (module_mass * 18 + center_tether_mass) * 9.80665
-        kp = 0.2 # Scaling term to not let friction cone volume dominate
-        total_reward -= kp * (robot_weight ** 2) # Square so units agree
 
-        total_reward /= 800 # Normalize for gradients
+        total_reward = total_friction - robot_weight
 
         return total_reward
     
@@ -177,13 +172,22 @@ class JointAttentionReadout(nn.Module):
 
         readout = torch.einsum("bjn,bnd->bjd", attn, features)
 
+
         return readout.flatten(1)
 
 D_common = 128
 env = CreviceEnv(enable_viewer = True)
 env.reset()
-_, reward, _, _, _ = env.step([-0.0254, 0, 0.04, 0, np.pi/2, 0, np.pi/2])
+for i in range(env.model.ngeom):
+    name = mujoco.mj_id2name(env.model, mujoco.mjtObj.mjOBJ_GEOM, i)
+    print(f"id={i} : {name}")
+_, reward, _, _, _ = env.step([0, np.pi/2, 0, np.pi/2])
 print(f"Reward: {reward}")
+
+if env.enable_viewer:
+    while env.viewer.is_running():
+        env.viewer.sync()
+        time.sleep(0.01)
 
 # policy_kwargs = dict(
 #     features_extractor_class = PointNetExtractor,
