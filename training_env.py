@@ -12,15 +12,16 @@ import mujoco.viewer
 import time
 from point_cloud_compression import closest_point_filter
 
+global POINT_CLOUD_DIM
+POINT_CLOUD_DIM = 1024
+
 class CreviceEnv(gym.Env):
     def __init__(self, enable_viewer = False):
         self.setup(enable_viewer)
         
     def setup(self, enable_viewer):
         # Create point cloud
-        global POINT_CLOUD_DIM
         self.point_cloud = np.load("geo/point_clouds/parallel_plates_9.5cm.npy")
-        POINT_CLOUD_DIM = 1024
         self.point_cloud = closest_point_filter(self.point_cloud, POINT_CLOUD_DIM)
         self.ref_point = np.array([-0.0254, 0, 0.04])
 
