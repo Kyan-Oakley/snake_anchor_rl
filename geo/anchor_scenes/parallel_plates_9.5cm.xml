@@ -3,7 +3,7 @@
 <visual>
         <scale contactheight="0.05" contactwidth="0.01"/>
     </visual>
-  <option cone="elliptic" noslip_iterations="5" integrator="implicitfast"/>
+  <option cone="elliptic" noslip_iterations="5" integrator="implicit"/>
   <option timestep="0.0005" gravity="0 0 -9.81"/>
 
   <asset>
@@ -13,7 +13,7 @@
     <material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance=".2"/>
   </asset>
   
-  <include file="REU_snake_robot.xml"/>
+  <include file="../REU_snake_robot.xml"/>
 
   
   <worldbody>

@@ -1,95 +1,105 @@
-"""
-Generate a point cloud map of the anchor scene (walls, no snake).
-
-Geometry comes directly from xml_anchor_scene.xml:
-  Wall1: pos=(0.04175, 0, 0.2),  half-size=(0.01, 0.5,  0.5)
-  Wall2: pos=(-0.04175, 0, 0.2), half-size=(0.01, 0.5,  0.5)
-
-Outputs:
-  anchor_scene.npy  — (N, 3) float32 array of [x, y, z] points
-  anchor_scene.ply  — PLY file for visualization (e.g. MeshLab / Open3D)
-"""
-
+import argparse
 import numpy as np
+import xml.etree.ElementTree as ET
+import matplotlib.pyplot as plt
+from pathlib import Path
 
 
-def sample_box_surface(center, half_sizes, density=500):
-    """Sample points uniformly on the surface of an axis-aligned box.
+def parse_wall_geoms(xml_path):
+    """Return list of (name, world_center, half_sizes) for all Wall_* box geoms."""
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    worldbody = root.find('worldbody')
+    if worldbody is None:
+        return []
 
-    density: target points per square meter
+    walls = []
+    for body in worldbody.iter('body'):
+        body_pos = np.array([float(v) for v in body.get('pos', '0 0 0').split()])
+        for geom in body.findall('geom'):
+            if geom.get('type', 'sphere') != 'box':
+                continue
+            geom_pos = np.array([float(v) for v in geom.get('pos', '0 0 0').split()])
+            half_sizes = np.array([float(v) for v in geom.get('size', '').split()])
+            walls.append((geom.get('name'), body_pos + geom_pos, half_sizes))
+
+    return walls
+
+
+def sample_inner_face(center, half_sizes, toward, density=5000, max_depth=0.20):
+    """Sample points uniformly on the single face of a box that faces the gap.
+
+    toward:    unit-ish vector pointing from this wall's center toward the gap centroid
+    max_depth: only sample this many meters above the bottom of the wall (Z axis)
     """
-    cx, cy, cz = center
-    hx, hy, hz = half_sizes
+    inner_axis = int(np.argmax(np.abs(toward)))
+    inner_dir  = int(np.sign(toward[inner_axis]))
+    face_coord = center[inner_axis] + inner_dir * half_sizes[inner_axis]
 
-    faces = [
-        # (fixed_axis, fixed_val, range_ax1, range_ax2)   — order: x,y,z
-        ("x", cx + hx, (cy - hy, cy + hy), (cz - hz, cz + hz)),   # +x
-        ("x", cx - hx, (cy - hy, cy + hy), (cz - hz, cz + hz)),   # -x
-        ("y", cy + hy, (cx - hx, cx + hx), (cz - hz, cz + hz)),   # +y
-        ("y", cy - hy, (cx - hx, cx + hx), (cz - hz, cz + hz)),   # -y
-        ("z", cz + hz, (cx - hx, cx + hx), (cy - hy, cy + hy)),   # +z
-        ("z", cz - hz, (cx - hx, cx + hx), (cy - hy, cy + hy)),   # -z
-    ]
+    free_axes = [a for a in range(3) if a != inner_axis]
+    a0, a1 = free_axes
 
-    pts = []
-    for axis, val, r1, r2 in faces:
-        area = (r1[1] - r1[0]) * (r2[1] - r2[0])
-        n = max(1, int(area * density))
-        a1 = np.random.uniform(r1[0], r1[1], n)
-        a2 = np.random.uniform(r2[0], r2[1], n)
-        fixed = np.full(n, val)
-        if axis == "x":
-            face_pts = np.stack([fixed, a1, a2], axis=1)
-        elif axis == "y":
-            face_pts = np.stack([a1, fixed, a2], axis=1)
-        else:
-            face_pts = np.stack([a1, a2, fixed], axis=1)
-        pts.append(face_pts)
+    ranges = {}
+    for a in free_axes:
+        lo = center[a] - half_sizes[a]
+        hi = center[a] + half_sizes[a]
+        if a == 2:  # Z is vertical — clamp to bottom max_depth metres
+            hi = min(hi, lo + max_depth)
+        ranges[a] = (lo, hi)
 
-    return np.concatenate(pts, axis=0)
+    r0, r1 = ranges[a0], ranges[a1]
+    area = (r0[1] - r0[0]) * (r1[1] - r1[0])
+    n = max(1, int(area * density))
+
+    pts = np.zeros((n, 3))
+    pts[:, inner_axis] = face_coord
+    pts[:, a0] = np.random.uniform(r0[0], r0[1], n)
+    pts[:, a1] = np.random.uniform(r1[0], r1[1], n)
+    return pts
 
 
-def save_ply(path, points):
-    """Write a binary PLY file from an (N, 3) float32 array."""
-    n = len(points)
-    header = (
-        "ply\n"
-        "format binary_little_endian 1.0\n"
-        f"element vertex {n}\n"
-        "property float x\n"
-        "property float y\n"
-        "property float z\n"
-        "end_header\n"
-    ).encode()
-    with open(path, "wb") as f:
-        f.write(header)
-        f.write(points.astype(np.float32).tobytes())
+def visualize_cloud(cloud, title):
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(cloud[:, 0], cloud[:, 1], cloud[:, 2], s=1, alpha=0.5)
+    ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Z')
+    ax.set_title(title)
+    ax.set_aspect('equal')
+    plt.tight_layout()
+    plt.show()
 
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--visualize', action='store_true', help='Show 3D plot of each point cloud after generation')
+args = parser.parse_args()
 
 np.random.seed(42)
 
-boxes = [
-    # (label,         center,              half_sizes,       density)
-    ("Wall1",   ( 0.04175, 0.0, 0.20), (0.01, 0.50, 0.50), 500),
-    ("Wall2",   (-0.04175, 0.0, 0.20), (0.01, 0.50, 0.50), 500),
-]
+scenes_dir = Path("anchor_scenes")
+clouds_dir = Path("point_clouds")
+clouds_dir.mkdir(exist_ok=True)
 
-all_pts = []
+for xml_file in sorted(scenes_dir.glob("*.xml")):
+    walls = parse_wall_geoms(xml_file)
 
-for label, center, half_sizes, density in boxes:
-    pts = sample_box_surface(center, half_sizes, density)
-    print(f"{label}: {len(pts)} points")
-    all_pts.append(pts)
+    if len(walls) < 2:
+        print(f"[{xml_file.name}] fewer than 2 Wall geoms found, skipping")
+        continue
 
-cloud = np.concatenate(all_pts, axis=0).astype(np.float32)
-print(f"Total:  {len(cloud)} points")
+    centers = np.array([w[1] for w in walls])
+    centroid = centers.mean(axis=0)
 
-out_dir = __file__[: __file__.rfind("/")]
-npy_path = out_dir + "/anchor_scene.npy"
-ply_path = out_dir + "/anchor_scene.ply"
+    all_pts = []
+    for name, center, half_sizes in walls:
+        toward = centroid - center
+        pts = sample_inner_face(center, half_sizes, toward, density=5000)
+        print(f"  {name}: {len(pts)} points")
+        all_pts.append(pts)
 
-np.save(npy_path, cloud)
-save_ply(ply_path, cloud)
+    cloud = np.concatenate(all_pts).astype(np.float32)
+    out_path = clouds_dir / f"{xml_file.stem}.npy"
+    np.save(out_path, cloud)
+    print(f"[{xml_file.name}] {len(cloud)} total points → {out_path}")
 
-print(f"Saved {npy_path}")
-print(f"Saved {ply_path}")
+    if args.visualize:
+        visualize_cloud(cloud, xml_file.stem)
