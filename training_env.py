@@ -10,18 +10,23 @@ from pointnet2_utils import PointNetSetAbstraction
 import mujoco
 import mujoco.viewer
 import time
-from point_cloud_compression import ClosestPoint
+from point_cloud_compression import closest_point_filter
 
 class CreviceEnv(gym.Env):
     def __init__(self, enable_viewer = False):
-        # Initialize gymnasium
+        self.setup(enable_viewer)
+        
+    def setup(self, enable_viewer):
+        # Create point cloud
         global POINT_CLOUD_DIM
         self.point_cloud = np.load("geo/point_clouds/parallel_plates_9.5cm.npy")
-        POINT_CLOUD_DIM = np.size(self.point_cloud, axis = 0)
+        POINT_CLOUD_DIM = 1024
+        self.point_cloud = closest_point_filter(self.point_cloud, POINT_CLOUD_DIM)
         self.ref_point = np.array([-0.0254, 0, 0.04])
 
         self.shifted_point_cloud = np.array([self.point_cloud[i] - self.ref_point for i in range(POINT_CLOUD_DIM)])
-
+        
+        # Initialize gymnasium
         low  = np.array([-np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
         high = np.array([np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(POINT_CLOUD_DIM, 3), dtype=np.float32)
@@ -34,6 +39,7 @@ class CreviceEnv(gym.Env):
         self.enable_viewer = enable_viewer
         if self.enable_viewer:
             self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
+        self.counter = 0
 
         # Find wall ID's for contact points
         self.wall_geom_ids = {
@@ -117,6 +123,7 @@ class CreviceEnv(gym.Env):
 
         total_reward = (total_friction - robot_weight) / robot_weight
 
+        self.count += 1
         return total_reward
     
 class PointNetExtractor(BaseFeaturesExtractor):
