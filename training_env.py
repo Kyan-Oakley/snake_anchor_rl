@@ -10,6 +10,7 @@ from pointnet2_utils import PointNetSetAbstraction
 import mujoco
 import mujoco.viewer
 import time
+from point_cloud_compression import ClosestPoint
 
 class CreviceEnv(gym.Env):
     def __init__(self, enable_viewer = False):

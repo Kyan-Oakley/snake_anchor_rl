@@ -26,7 +26,7 @@ def parse_wall_geoms(xml_path):
     return walls
 
 
-def sample_inner_face(center, half_sizes, toward, density=5000, max_depth=0.20):
+def sample_inner_face(center, half_sizes, toward, density=15000, max_depth=0.20):
     """Sample points uniformly on the single face of a box that faces the gap.
 
     toward:    unit-ish vector pointing from this wall's center toward the gap centroid
@@ -92,7 +92,7 @@ for xml_file in sorted(scenes_dir.glob("*.xml")):
     all_pts = []
     for name, center, half_sizes in walls:
         toward = centroid - center
-        pts = sample_inner_face(center, half_sizes, toward, density=5000)
+        pts = sample_inner_face(center, half_sizes, toward, density=15000)
         print(f"  {name}: {len(pts)} points")
         all_pts.append(pts)
 
