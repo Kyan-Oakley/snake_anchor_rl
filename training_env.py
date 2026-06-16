@@ -15,7 +15,7 @@ class CreviceEnv(gym.Env):
     def __init__(self, enable_viewer = False):
         # Initialize gymnasium
         global POINT_CLOUD_DIM
-        self.point_cloud = np.load("geo/anchor_scene.npy")
+        self.point_cloud = np.load("geo/point_clouds/parallel_plates_9.5cm.npy")
         POINT_CLOUD_DIM = np.size(self.point_cloud, axis = 0)
         self.ref_point = np.array([-0.0254, 0, 0.04])
 
@@ -27,7 +27,7 @@ class CreviceEnv(gym.Env):
         self.action_space = spaces.Box(low=low, high=high, shape=(4,), dtype=np.float32)
 
         # Initialize Mujoco
-        self.model = mujoco.MjModel.from_xml_path("geo/xml_anchor_scene.xml")
+        self.model = mujoco.MjModel.from_xml_path("geo/anchor_scenes/parallel_plates_9.5cm.xml")
         self.data = mujoco.MjData(self.model)
         self.model.opt.gravity[:] = [0, 0, 0]
         self.enable_viewer = enable_viewer
@@ -114,7 +114,7 @@ class CreviceEnv(gym.Env):
         center_tether_mass = 0.5
         robot_weight = (module_mass * 18 + center_tether_mass) * 9.80665
 
-        total_reward = total_friction - robot_weight
+        total_reward = (total_friction - robot_weight) / robot_weight
 
         return total_reward
     
