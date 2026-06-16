@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from stable_baselines3 import SAC
+from stable_baselines3 import CheckpointCallback
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from pointnet2_utils import PointNetSetAbstraction
 import mujoco
@@ -49,12 +50,17 @@ class CreviceEnv(gym.Env):
                             }
 
     def reset(self, seed=None):
-        # Reset Mujoco environment
-        mujoco.mj_resetData(self.model, self.data)
+        # Hard reset to change the crevice after 10 reps, otherwise reset the snake
+        if self.count == 10:
+            self.count = 0
+            self.setup(self.enable_viewer)
+        else:
+            mujoco.mj_resetData(self.model, self.data)
 
         # Find and extract point cloud info
         observation = self.shifted_point_cloud
         info = None
+        self.count += 1
         return observation, info
 
     def step(self, action):
@@ -124,7 +130,6 @@ class CreviceEnv(gym.Env):
 
         total_reward = (total_friction - robot_weight) / robot_weight
 
-        self.count += 1
         return total_reward
     
 class PointNetExtractor(BaseFeaturesExtractor):
@@ -160,7 +165,7 @@ class PointNetExtractor(BaseFeaturesExtractor):
         return features
     
 class JointAttentionReadout(nn.Module):
-    def __init__(self, D_common, n_joints=4):
+    def __init__(self, D_common=128, n_joints=4):
         super().__init__()
         self.scale = D_common ** 0.5
 
@@ -183,32 +188,37 @@ class JointAttentionReadout(nn.Module):
 
 
         return readout.flatten(1)
+    
+
 
 D_common = 128
+load_model = False
+
 env = CreviceEnv(enable_viewer = True)
 env.reset()
-for i in range(env.model.ngeom):
-    name = mujoco.mj_id2name(env.model, mujoco.mjtObj.mjOBJ_GEOM, i)
-    print(f"id={i} : {name}")
-_, reward, _, _, _ = env.step([0, np.pi/2, 0, np.pi/2])
-print(f"Reward: {reward}")
 
-if env.enable_viewer:
-    while env.viewer.is_running():
-        env.viewer.sync()
-        time.sleep(0.01)
+if load_model:
+    model = SAC.load("agent/checkpoints/sac_snake_10000_steps", env=env) # Change to the desired checkpoint
+else:
+    policy_kwargs = dict(
+        features_extractor_class = PointNetExtractor,
+        features_extractor_kwargs = dict(features_dim = 4 * D_common),
+        net_arch = dict(pi = [256, 256], qf = [256, 256])
+    )
 
-# policy_kwargs = dict(
-#     features_extractor_class = PointNetExtractor,
-#     features_extractor_kwargs = dict(features_dim = 4 * D_common),
-#     net_arch = dict(pi = [256, 256], qf = [256, 256])
-# )
+    model = SAC(
+        "MlpPolicy",
+        env,
+        policy_kwargs=policy_kwargs,
+        verbose=1
+    )
 
-# model = SAC(
-#     "MlpPolicy",
-#     env,
-#     policy_kwargs=policy_kwargs,
-#     verbose=1
-# )
+    checkpoint_callback = CheckpointCallback(
+        save_freq = 10_000,
+        save_path = "checkpoints/",
+        name_prefix = "jam_net"
+    )
 
-# model.learn(total_timesteps = 1_000_000)
+# Set timesteps based on how far through training and how much more training is needed
+model.learn(total_timesteps = 1_000_000, callback = checkpoint_callback)
+model.save("agent/sac_snake_final")
