@@ -19,22 +19,22 @@
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" size="5 5 .05" type="plane" material="grid" group="2"/>
-    <!-- fully enclosed solar panel attachment gap: 9.5cm center-to-center (7.5cm inner gap x),
-         20cm inner depth (y), representative of satellite panel-to-body interface channels -->
-    <body name="Wall1" pos="0.0475 0 0">
+    <!-- fully enclosed structural frame slot: 7.0cm center-to-center (5.0cm inner gap x),
+         20cm inner depth (y), representative of satellite truss/frame channels -->
+    <body name="Wall1" pos="0.035 0 0">
         <geom name="Wall_1" type="box" pos="0 0 0.5" size="0.01 0.11 0.5" contype="1" conaffinity="2" group="2" rgba="0.8 0.5 0.2 0.2"/>
     </body>
 
-    <body name="Wall2" pos="-0.0475 0 0">
+    <body name="Wall2" pos="-0.035 0 0">
         <geom name="Wall_2" type="box" pos="0 0 0.5" size="0.01 0.11 0.5" contype="1" conaffinity="2" group="2" rgba="0.8 0.5 0.2 0.2"/>
     </body>
 
-    <body name="Wall3" pos="0 0.085 0">
-        <geom name="Wall_3" type="box" pos="0 0 0.5" size="0.0575 0.01 0.5" contype="1" conaffinity="2" group="2" rgba="0.8 0.5 0.2 0.2"/>
+    <body name="Wall3" pos="0 0.075 0">
+        <geom name="Wall_3" type="box" pos="0 0 0.5" size="0.045 0.01 0.5" contype="1" conaffinity="2" group="2" rgba="0.8 0.5 0.2 0.2"/>
     </body>
 
-    <body name="Wall4" pos="0 -0.035 0">
-        <geom name="Wall_4" type="box" pos="0 0 0.5" size="0.0575 0.01 0.5" contype="1" conaffinity="2" group="2" rgba="0.8 0.5 0.2 0.2"/>
+    <body name="Wall4" pos="0 -0.02 0">
+        <geom name="Wall_4" type="box" pos="0 0 0.5" size="0.045 0.01 0.5" contype="1" conaffinity="2" group="2" rgba="0.8 0.5 0.2 0.2"/>
     </body>
   </worldbody>
 
