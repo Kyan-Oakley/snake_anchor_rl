@@ -21,8 +21,21 @@ class CreviceEnv(gym.Env):
         self.setup(enable_viewer)
         
     def setup(self, enable_viewer):
+        # Randomly select anchor scene
+        scenes = ["parallel_plates_7.0cm",
+                  "parallel_plates_8.0cm",
+                  "parallel_plates_9.5cm",
+                  "parallel_plates_11.0cm",
+                  "parallel_plates_13.0cm",
+                  "tapered_converging_3deg_9.5cm",
+                  "tapered_converging_5deg_9.5cm",
+                  "tapered_diverging_3deg_9.5cm",
+                  "tapered_diverging_5deg_9.5cm"]
+        chosen_scene = np.random.choice(scenes)
+        scene_path = f"geo/point_clouds/{chosen_scene}.npy"
+
         # Create point cloud
-        self.point_cloud = np.load("geo/point_clouds/parallel_plates_9.5cm.npy")
+        self.point_cloud = np.load(scene_path)
         self.point_cloud = closest_point_filter(self.point_cloud, POINT_CLOUD_DIM)
         self.ref_point = np.array([-0.0254, 0, 0.04])
 
@@ -47,12 +60,12 @@ class CreviceEnv(gym.Env):
         self.wall_geom_ids = {
                                 mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'Wall_1'),
                                 mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'Wall_2'),
-                            }
+                             }
 
     def reset(self, seed=None):
         # Hard reset to change the crevice after 10 reps, otherwise reset the snake
-        if self.count == 10:
-            self.count = 0
+        if self.counter == 10:
+            self.counter = 0
             self.setup(self.enable_viewer)
         else:
             mujoco.mj_resetData(self.model, self.data)
@@ -60,7 +73,7 @@ class CreviceEnv(gym.Env):
         # Find and extract point cloud info
         observation = self.shifted_point_cloud
         info = None
-        self.count += 1
+        self.counter += 1
         return observation, info
 
     def step(self, action):
@@ -194,8 +207,7 @@ class JointAttentionReadout(nn.Module):
 D_common = 128
 load_model = False
 
-env = CreviceEnv(enable_viewer = True)
-env.reset()
+env = CreviceEnv()
 
 if load_model:
     model = SAC.load("agent/checkpoints/sac_snake_10000_steps", env=env) # Change to the desired checkpoint
