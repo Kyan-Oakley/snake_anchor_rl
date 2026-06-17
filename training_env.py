@@ -149,23 +149,24 @@ class PointNetExtractor(BaseFeaturesExtractor):
         
         # Make instance of pointnet encoder and attention network here
         self.sa1 = PointNetSetAbstraction(
-            npoint = POINT_CLOUD_DIM, radius="R1", nsample=32,
+            npoint = 512, radius=0.04, nsample=32,
             in_channel=3, mlp=[32, 32, 64], group_all=False
         )
         self.sa2 = PointNetSetAbstraction(
-            npoint = POINT_CLOUD_DIM//4, radius="R2", nsample=32,
+            npoint = 128, radius=0.07, nsample=32,
             in_channel=64+3, mlp=[64, 64, 128], group_all=False
         )
         self.sa3 = PointNetSetAbstraction(
-            npoint = POINT_CLOUD_DIM//16, radius="R3", nsample=32,
+            npoint = 32, radius=0.15, nsample=32,
             in_channel=128+3, mlp=[128, 128, 256], group_all=False
         )
         self.attention = JointAttentionReadout(D_common)
 
     def forward(self, observations):
         # observations shape: (batch, N, 4)
-        # run through PointNet++
-        xyz1, f1 = self.sa1.forward(observations, None)
+        # PointNetSetAbstraction expects [B, C, N]; observations arrive as [B, N, C]
+        obs = observations.permute(0, 2, 1)
+        xyz1, f1 = self.sa1.forward(obs, None)
         xyz2, f2 = self.sa2.forward(xyz1, f1)
         xyz3, f3 = self.sa3.forward(xyz2, f2)
 
