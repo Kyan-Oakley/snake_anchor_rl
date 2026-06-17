@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from stable_baselines3 import SAC
-from stable_baselines3 import CheckpointCallback
+from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from pointnet2_utils import PointNetSetAbstraction
 import mujoco
@@ -22,7 +22,7 @@ class CreviceEnv(gym.Env):
         
     def setup(self, enable_viewer):
         # Randomly select anchor scene
-        scenes = ["parallel_plates_7.0cm",
+        scenes = np.array(["parallel_plates_7.0cm",
                   "parallel_plates_8.0cm",
                   "parallel_plates_9.5cm",
                   "parallel_plates_11.0cm",
@@ -30,7 +30,7 @@ class CreviceEnv(gym.Env):
                   "tapered_converging_3deg_9.5cm",
                   "tapered_converging_5deg_9.5cm",
                   "tapered_diverging_3deg_9.5cm",
-                  "tapered_diverging_5deg_9.5cm"]
+                  "tapered_diverging_5deg_9.5cm"])
         chosen_scene = np.random.choice(scenes)
         scene_path = f"geo/point_clouds/{chosen_scene}.npy"
 
@@ -92,7 +92,6 @@ class CreviceEnv(gym.Env):
             if np.any(np.isnan(self.data.qpos)) or np.any(np.abs(self.data.qpos) > 1e6):
                 return None, -10, True, False, {}
             if i >= N_min and np.linalg.norm(self.data.qvel[6:]) < vel_tol:
-                print(f"Converged after {i} steps")
                 break
         else:
             print(f"Warning: did not converge after {N_max} steps — joint qvel={self.data.qvel[-4:]}")
@@ -124,7 +123,6 @@ class CreviceEnv(gym.Env):
             contact_forces.append(contact_wrench[0])  # normal force only
             g1_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, self.data.contact[idx].geom1)
             g2_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, self.data.contact[idx].geom2)
-            print(contact_wrench[0], g1_name, g2_name)
 
         # Build final elements and return
         reward = self.generate_reward(contact_forces)
@@ -146,8 +144,8 @@ class CreviceEnv(gym.Env):
         return total_reward
     
 class PointNetExtractor(BaseFeaturesExtractor):
-    def __init__(self, D_common = 128):
-        super().__init__(self)
+    def __init__(self, observation_space, D_common=128):
+        super().__init__(observation_space, features_dim=4*D_common)
         
         # Make instance of pointnet encoder and attention network here
         self.sa1 = PointNetSetAbstraction(
@@ -204,7 +202,6 @@ class JointAttentionReadout(nn.Module):
     
 
 
-D_common = 128
 load_model = False
 
 env = CreviceEnv()
@@ -214,7 +211,7 @@ if load_model:
 else:
     policy_kwargs = dict(
         features_extractor_class = PointNetExtractor,
-        features_extractor_kwargs = dict(features_dim = 4 * D_common),
+        features_extractor_kwargs = dict(D_common=128),
         net_arch = dict(pi = [256, 256], qf = [256, 256])
     )
 
