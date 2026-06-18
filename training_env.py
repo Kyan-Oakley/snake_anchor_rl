@@ -11,6 +11,7 @@ from pointnet2_utils import PointNetSetAbstraction
 import mujoco
 import mujoco.viewer
 import time
+from scipy.spatial.transform import Rotation
 from point_cloud_compression import closest_point_filter
 
 global POINT_CLOUD_DIM
@@ -32,23 +33,24 @@ class CreviceEnv(gym.Env):
                   "tapered_diverging_3deg_9.5cm",
                   "tapered_diverging_5deg_9.5cm"])
         chosen_scene = np.random.choice(scenes)
-        scene_path = f"geo/point_clouds/{chosen_scene}.npy"
+        point_cloud_path = f"geo/point_clouds/{chosen_scene}.npy"
+        mujoco_path = f"geo/anchor_scenes/{chosen_scene}.xml"
 
         # Create point cloud
-        self.point_cloud = np.load(scene_path)
+        self.point_cloud = np.load(point_cloud_path)
         self.point_cloud = closest_point_filter(self.point_cloud, POINT_CLOUD_DIM)
         self.ref_point = np.array([-0.0254, 0, 0.04])
 
         self.shifted_point_cloud = np.array([self.point_cloud[i] - self.ref_point for i in range(POINT_CLOUD_DIM)])
         
         # Initialize gymnasium
-        low  = np.array([-np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
-        high = np.array([np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
+        low  = np.array([-0.7, -0.02, 0, -np.pi, -np.pi, -np.pi, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
+        high = np.array([0.7, 0.85, 0.2, np.pi, np.pi, np.pi, np.pi/2, np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(POINT_CLOUD_DIM, 3), dtype=np.float32)
-        self.action_space = spaces.Box(low=low, high=high, shape=(4,), dtype=np.float32)
+        self.action_space = spaces.Box(low=low, high=high, shape=(11,), dtype=np.float32)
 
         # Initialize Mujoco
-        self.model = mujoco.MjModel.from_xml_path("geo/anchor_scenes/parallel_plates_9.5cm.xml")
+        self.model = mujoco.MjModel.from_xml_path(mujoco_path)
         self.data = mujoco.MjData(self.model)
         self.model.opt.gravity[:] = [0, 0, 0]
         self.enable_viewer = enable_viewer
@@ -78,7 +80,19 @@ class CreviceEnv(gym.Env):
 
     def step(self, action):
         # Set joint angles in mujoco
-        self.data.ctrl[:] = action
+        base_xyz = action[0:3]
+        base_rpy = action[3:6]
+        joint_angles = action[6:]
+        self.data.qpos[0:3] = base_xyz
+        self.data.qpos[3:7] = Rotation.from_euler("xyz", base_rpy, degrees=False).as_quat()
+        self.data.ctrl[:] = joint_angles
+
+        # Check and penalize collisions
+        mujoco.mj_forward(self.model, self.data)
+
+        for i in range(self.data.ncon):
+            if self.data.contact[i].dist < -0.005:  # 5mm penetration threshold
+                return None, -10, True, False, {}
 
         # Settle until qvel converges or timeout
         N_min  = 500    # wait out initial contact transients before checking
@@ -121,8 +135,6 @@ class CreviceEnv(gym.Env):
             contact_wrench = np.zeros(6, dtype=np.float64)
             mujoco.mj_contactForce(self.model, self.data, idx, contact_wrench)
             contact_forces.append(contact_wrench[0])  # normal force only
-            g1_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, self.data.contact[idx].geom1)
-            g2_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, self.data.contact[idx].geom2)
 
         # Build final elements and return
         reward = self.generate_reward(contact_forces)
@@ -140,6 +152,14 @@ class CreviceEnv(gym.Env):
         robot_weight = (module_mass * 18 + center_tether_mass) * 9.80665
 
         total_reward = (total_friction - robot_weight) / robot_weight
+
+        """
+        Next steps for reward:
+        Primary term should be minimum inscribed hypersphere within admissible wrench hull
+        Secondary term penalizing bad base joint pose
+        Need to add kill term if bodies are physcially overlapping
+        Finally as a last metric reward reachability
+        """
 
         return total_reward
     
@@ -163,7 +183,7 @@ class PointNetExtractor(BaseFeaturesExtractor):
         self.attention = JointAttentionReadout(D_common)
 
     def forward(self, observations):
-        # observations shape: (batch, N, 4)
+        # observations shape: (batch, N, 3)
         # PointNetSetAbstraction expects [B, C, N]; observations arrive as [B, N, C]
         obs = observations.permute(0, 2, 1)
         xyz1, f1 = self.sa1.forward(obs, None)
@@ -192,9 +212,9 @@ class JointAttentionReadout(nn.Module):
         f2 = self.proj2(f2.transpose(1, 2))
         f3 = self.proj3(f3.transpose(1, 2))
 
-        features = torch.cat([f1, f2, f3], dim=1)
+        features = torch.cat([f1, f2, f3], dim=2)
 
-        attn = torch.softmax(torch.einsum("bdn,jd->bjn", features, self.queries) / self.scale, dim=1)
+        attn = torch.softmax(torch.einsum("bnd,jd->bjn", features, self.queries) / self.scale, dim=1)
 
         readout = torch.einsum("bjn,bnd->bjd", attn, features)
 

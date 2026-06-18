@@ -76,5 +76,12 @@
     <pair name="f_mod_4_w3_link"  geom1="Wall_3" geom2="mesh4" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
     <pair name="f_mod_4_w4_link"  geom1="Wall_4" geom2="mesh4" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
 
+    <pair name="f_mod_5"  geom1="floor" geom2="mod_5_link"  condim="6" friction="1.35 1.35 1.35"/>
+
+    <pair name="f_mod_5_w1_link"  geom1="Wall_1" geom2="mesh5" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
+    <pair name="f_mod_5_w2_link"  geom1="Wall_2" geom2="mesh5" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
+    <pair name="f_mod_5_w3_link"  geom1="Wall_3" geom2="mesh5" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
+    <pair name="f_mod_5_w4_link"  geom1="Wall_4" geom2="mesh5" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
+
   </contact>
   </mujoco>
