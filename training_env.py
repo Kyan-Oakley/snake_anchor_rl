@@ -66,7 +66,7 @@ class CreviceEnv(gym.Env):
 
     def reset(self, seed=None):
         # Hard reset to change the crevice after 10 reps, otherwise reset the snake
-        if self.counter == 10:
+        if self.counter == 5:
             self.counter = 0
             self.setup(self.enable_viewer)
         else:
@@ -92,11 +92,11 @@ class CreviceEnv(gym.Env):
 
         for i in range(self.data.ncon):
             if self.data.contact[i].dist < -0.005:  # 5mm penetration threshold
-                return None, -10, True, False, {}
+                return self.shifted_point_cloud.astype(np.float32), -10, True, False, {}
 
         # Settle until qvel converges or timeout
         N_min  = 500    # wait out initial contact transients before checking
-        N_max  = 8000
+        N_max  = 15000
         vel_tol = 0.1
 
         for i in range(N_max):
@@ -104,7 +104,7 @@ class CreviceEnv(gym.Env):
             if self.enable_viewer:
                 self.viewer.sync()
             if np.any(np.isnan(self.data.qpos)) or np.any(np.abs(self.data.qpos) > 1e6):
-                return None, -10, True, False, {}
+                return self.shifted_point_cloud.astype(np.float32), -10, True, False, {}
             if i >= N_min and np.linalg.norm(self.data.qvel[6:]) < vel_tol:
                 break
         else:
@@ -138,10 +138,9 @@ class CreviceEnv(gym.Env):
 
         # Build final elements and return
         reward = self.generate_reward(contact_forces)
-        terminated = True
-        observation = truncated = None
+        observation = self.shifted_point_cloud.astype(np.float32)
         info = {}
-        return observation, reward, terminated, truncated, info
+        return observation, reward, True, False, info
     
     def generate_reward(self, contact_forces, friction_coeff=0.5):
         # Sum max friction force per contact (linear in normal force, avoids cubic cone volume scaling)
@@ -165,7 +164,7 @@ class CreviceEnv(gym.Env):
     
 class PointNetExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space, D_common=128):
-        super().__init__(observation_space, features_dim=4*D_common)
+        super().__init__(observation_space, features_dim=5*D_common)
         
         # Make instance of pointnet encoder and attention network here
         self.sa1 = PointNetSetAbstraction(
@@ -181,6 +180,7 @@ class PointNetExtractor(BaseFeaturesExtractor):
             in_channel=128+3, mlp=[128, 128, 256], group_all=False
         )
         self.attention = JointAttentionReadout(D_common)
+        self.out_norm = nn.LayerNorm(5 * D_common)
 
     def forward(self, observations):
         # observations shape: (batch, N, 3)
@@ -194,25 +194,25 @@ class PointNetExtractor(BaseFeaturesExtractor):
         features = self.attention.forward(f1, f2, f3)
 
         # return (batch, features_dim)
-        return features
+        return self.out_norm(features)
     
 class JointAttentionReadout(nn.Module):
-    def __init__(self, D_common=128, n_joints=4):
+    def __init__(self, D_common=128, n_joints=5):
         super().__init__()
         self.scale = D_common ** 0.5
 
-        self.queries = nn.Parameter(torch.randn(n_joints, D_common))
+        self.queries = nn.Parameter(torch.randn(n_joints, D_common) * 0.1)
 
-        self.proj1 = nn.Linear(64, D_common)
-        self.proj2 = nn.Linear(128, D_common)
-        self.proj3 = nn.Linear(256, D_common)
+        self.proj1 = nn.Sequential(nn.Linear(64, D_common), nn.LayerNorm(D_common))
+        self.proj2 = nn.Sequential(nn.Linear(128, D_common), nn.LayerNorm(D_common))
+        self.proj3 = nn.Sequential(nn.Linear(256, D_common), nn.LayerNorm(D_common))
 
     def forward(self, f1, f2, f3):
         f1 = self.proj1(f1.transpose(1, 2))
         f2 = self.proj2(f2.transpose(1, 2))
         f3 = self.proj3(f3.transpose(1, 2))
 
-        features = torch.cat([f1, f2, f3], dim=2)
+        features = torch.cat([f1, f2, f3], dim=1)
 
         attn = torch.softmax(torch.einsum("bnd,jd->bjn", features, self.queries) / self.scale, dim=1)
 
@@ -221,7 +221,8 @@ class JointAttentionReadout(nn.Module):
 
         return readout.flatten(1)
     
-
+def _clip_grad(grad):
+    return grad.clamp(-5.0, 5.0) if grad is not None else grad
 
 load_model = False
 
@@ -240,12 +241,20 @@ else:
         "MlpPolicy",
         env,
         policy_kwargs=policy_kwargs,
-        verbose=1
+        learning_starts=1000,
+        learning_rate=1e-4,
+        verbose=1,
+        batch_size=128
     )
+
+    # Clip gradients on every backward pass to prevent NaN from exploding gradients
+    for param in model.policy.parameters():
+        if param.requires_grad:
+            param.register_hook(_clip_grad)
 
     checkpoint_callback = CheckpointCallback(
         save_freq = 10_000,
-        save_path = "checkpoints/",
+        save_path = "agent/checkpoints/",
         name_prefix = "jam_net"
     )
 
