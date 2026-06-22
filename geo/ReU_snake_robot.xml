@@ -1,8 +1,8 @@
 
 <mujoco>
-    <compiler angle="radian" meshdir="REU_Snake/Mesh/" />
+    <compiler angle="radian" />
   <asset>
-    <mesh name="ReU_mesh" file="ReU_Mesh.STL" scale="0.0254 0.0254 0.0254"/>
+    <mesh name="ReU_mesh" file="anchor_scenes/snake_mesh/ReU_Mesh.STL" scale="0.0254 0.0254 0.0254"/>
     <material name="red" rgba="1 0 0 1"/>
     <material name="blue" rgba="0 0 1 1"/>
     <material name="green_dark" rgba="0 0.6 0 1"/>  

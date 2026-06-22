@@ -1,0 +1,114 @@
+<mujoco>
+  <compiler angle="radian"/>
+  <asset>
+    <mesh name="J_mesh" file="anchor_scenes/snake_mesh/J_Mesh.STL" scale="0.001 0.001 0.001"/>
+    <material name="yellow_light" rgba="1 0.647 0 1"/>
+    <material name="yellow_dark" rgba="0.6 0.2 0 1"/>
+    <material name="blue" rgba="0 0 1 1"/>
+    <material name="red" rgba="1 0 0 1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+
+    <body name="mod_head_body" pos="0 0 0.1" euler="0 -1.57079633 0">
+      <joint name="mod_head_freejoint" type="free" damping="5.0"/>
+      <inertial pos="0 0 0" mass="0.250" diaginertia="0.0003126 0.0003126 0.0001051"/>
+      <geom name="mesh_head" type="mesh" mesh="J_mesh" pos="0 0 0" material="yellow_light" contype="2" conaffinity="1" group="0"/>
+
+      <body name="mod_head_out" pos="0.08747400 0.02050000 0.02509800" euler="-1.57079633 0.00000000 0.00000000">
+        <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+
+        <body name="mod_0_in" pos="0 0 0" euler="3.14159265 0.00000000 -1.57079633">
+          <joint name="joint_0" type="hinge" pos="0 0 0" axis="0 0 1" range="-1.5708 1.5708" limited="true" damping="0.1" frictionloss="0.2"/>
+          <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+          <geom name="geom_0_in" type="cylinder" size="0.006 0.01" pos="0 0 0" material="red" contype="1" conaffinity="4" group="1"/>
+
+          <body name="mod_0_body" pos="0.02945300 -0.01545000 -0.03409800" euler="0.00000000 0.00000000 1.57079633">
+            <inertial pos="0 0 0" mass="0.250" diaginertia="0.0003126 0.0003126 0.0001051"/>
+            <geom name="mesh_0" type="mesh" mesh="J_mesh" pos="0 0 0" material="yellow_dark" contype="2" conaffinity="1" group="0"/>
+
+            <body name="mod_0_out" pos="0.08747400 0.02050000 0.02509800" euler="1.57079633 0.00000000 0.00000000">
+              <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+              <geom name="geom_0_out" type="cylinder" size="0.006 0.0075" pos="0 0 0" material="blue" contype="1" conaffinity="4" group="1"/>
+
+              <body name="mod_1_in" pos="0 0 0" euler="3.14159265 0.00000000 1.57079633">
+                <joint name="joint_1" type="hinge" pos="0 0 0" axis="0 0 1" range="-1.5708 1.5708" limited="true" damping="0.1" frictionloss="0.2"/>
+                <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+                <geom name="geom_1_in" type="cylinder" size="0.006 0.01" pos="0 0 0" material="red" contype="1" conaffinity="4" group="1"/>
+
+                <body name="mod_1_body" pos="0.02945300 0.01545000 0.03409800" euler="3.14159265 0.00000000 1.57079633">
+                  <inertial pos="0 0 0" mass="0.250" diaginertia="0.0003126 0.0003126 0.0001051"/>
+                  <geom name="mesh_1" type="mesh" mesh="J_mesh" pos="0 0 0" material="yellow_light" contype="2" conaffinity="1" group="0"/>
+
+                  <body name="mod_1_out" pos="0.08747400 0.02050000 0.02509800" euler="1.57079633 0.00000000 0.00000000">
+                    <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+                    <geom name="geom_1_out" type="cylinder" size="0.006 0.0075" pos="0 0 0" material="blue" contype="1" conaffinity="4" group="1"/>
+
+                    <body name="mod_2_in" pos="0 0 0" euler="3.14159265 0.00000000 1.57079633">
+                      <joint name="joint_2" type="hinge" pos="0 0 0" axis="0 0 1" range="-1.5708 1.5708" limited="true" damping="0.1" frictionloss="0.2"/>
+                      <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+                      <geom name="geom_2_in" type="cylinder" size="0.006 0.01" pos="0 0 0" material="red" contype="1" conaffinity="4" group="1"/>
+
+                      <body name="mod_2_body" pos="0.02945300 0.01545000 0.03409800" euler="3.14159265 0.00000000 1.57079633">
+                        <inertial pos="0 0 0" mass="0.250" diaginertia="0.0003126 0.0003126 0.0001051"/>
+                        <geom name="mesh_2" type="mesh" mesh="J_mesh" pos="0 0 0" material="yellow_dark" contype="2" conaffinity="1" group="0"/>
+
+                        <body name="mod_2_out" pos="0.08747400 0.02050000 0.02509800" euler="1.57079633 0.00000000 0.00000000">
+                          <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+                          <geom name="geom_2_out" type="cylinder" size="0.006 0.0075" pos="0 0 0" material="blue" contype="1" conaffinity="4" group="1"/>
+
+                          <body name="mod_3_in" pos="0 0 0" euler="3.14159265 0.00000000 1.57079633">
+                            <joint name="joint_3" type="hinge" pos="0 0 0" axis="0 0 1" range="-1.5708 1.5708" limited="true" damping="0.1" frictionloss="0.2"/>
+                            <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+                            <geom name="geom_3_in" type="cylinder" size="0.006 0.01" pos="0 0 0" material="red" contype="1" conaffinity="4" group="1"/>
+
+                            <body name="mod_3_body" pos="0.02945300 0.01545000 0.03409800" euler="3.14159265 0.00000000 1.57079633">
+                              <inertial pos="0 0 0" mass="0.250" diaginertia="0.0003126 0.0003126 0.0001051"/>
+                              <geom name="mesh_3" type="mesh" mesh="J_mesh" pos="0 0 0" material="yellow_light" contype="2" conaffinity="1" group="0"/>
+
+                              <body name="mod_3_out" pos="0.08747400 0.02050000 0.02509800" euler="1.57079633 0.00000000 0.00000000">
+                                <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+                                <geom name="geom_3_out" type="cylinder" size="0.006 0.0075" pos="0 0 0" material="blue" contype="1" conaffinity="4" group="1"/>
+
+                                <body name="mod_4_in" pos="0 0 0" euler="3.14159265 0.00000000 1.57079633">
+                                  <joint name="joint_4" type="hinge" pos="0 0 0" axis="0 0 1" range="-1.5708 1.5708" limited="true" damping="0.1" frictionloss="0.2"/>
+                                  <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+                                  <geom name="geom_4_in" type="cylinder" size="0.006 0.01" pos="0 0 0" material="red" contype="1" conaffinity="4" group="1"/>
+
+                                  <body name="mod_4_body" pos="0.02945300 0.01545000 0.03409800" euler="3.14159265 0.00000000 1.57079633">
+                                    <inertial pos="0 0 0" mass="0.250" diaginertia="0.0003126 0.0003126 0.0001051"/>
+                                    <geom name="mesh_4" type="mesh" mesh="J_mesh" pos="0 0 0" material="yellow_dark" contype="2" conaffinity="1" group="0"/>
+
+                                    <body name="mod_4_out" pos="0.08747400 0.02050000 0.02509800" euler="1.57079633 0.00000000 0.00000000">
+                                      <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
+                                      <geom name="geom_4_out" type="cylinder" size="0.006 0.0075" pos="0 0 0" material="blue" contype="1" conaffinity="4" group="1"/>
+
+                                    </body>
+                                  </body>
+                                </body>
+                              </body>
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+  </worldbody>
+
+  <actuator>
+    <position name="servo_0_pos" joint="joint_0" kp="10" ctrlrange="-1.5708 1.5708" ctrllimited="true" forcerange="-10.0 10.0" forcelimited="true"/>
+    <position name="servo_1_pos" joint="joint_1" kp="10" ctrlrange="-1.5708 1.5708" ctrllimited="true" forcerange="-10.0 10.0" forcelimited="true"/>
+    <position name="servo_2_pos" joint="joint_2" kp="10" ctrlrange="-1.5708 1.5708" ctrllimited="true" forcerange="-10.0 10.0" forcelimited="true"/>
+    <position name="servo_3_pos" joint="joint_3" kp="10" ctrlrange="-1.5708 1.5708" ctrllimited="true" forcerange="-10.0 10.0" forcelimited="true"/>
+    <position name="servo_4_pos" joint="joint_4" kp="10" ctrlrange="-1.5708 1.5708" ctrllimited="true" forcerange="-10.0 10.0" forcelimited="true"/>
+    </actuator>
+</mujoco>

@@ -4,7 +4,7 @@
         <scale contactheight="0.05" contactwidth="0.01"/>
     </visual>
   <option cone="elliptic" noslip_iterations="5" integrator="implicit"/>
-  <option timestep="0.0005" gravity="0 0 -9.81"/>
+  <option timestep="0.0005" gravity="0 0 -9.0"/>
 
   <asset>
 
@@ -13,7 +13,7 @@
     <material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance=".2"/>
   </asset>
 
-  <include file="../REU_snake_robot.xml"/>
+  <include file="../J_snake_robot.xml"/>
 
 
   <worldbody>
@@ -30,53 +30,4 @@
 
     </body>
   </worldbody>
-
-<contact>
-
-    <pair name="f_mod_0"  geom1="floor" geom2="mod_0_link"  condim="6" friction="1.35 1.35 1.35"/>
-
-    <pair name="f_mod_0_w1_link"  geom1="Wall_1" geom2="mesh0" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-
-    <pair name="f_mod_0_w2_link"  geom1="Wall_2" geom2="mesh0" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-
-    <pair name="f_mod_1"  geom1="floor" geom2="mod_1_link"  condim="6" friction="1.35 1.35 1.35"/>
-
-    <pair name="f_mod_1_w1_link"  geom1="Wall_1" geom2="mesh1" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-
-    <pair name="f_mod_1_w2_link"  geom1="Wall_2" geom2="mesh1" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-
-    <pair name="f_mod_2"  geom1="floor" geom2="mod_2_link"  condim="6" friction="1.35 1.35 1.35"/>
-
-    <pair name="f_mod_2_w1_link"  geom1="Wall_1" geom2="mesh2" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-
-    <pair name="f_mod_2_w2_link"  geom1="Wall_2" geom2="mesh2" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-
-    <pair name="f_mod_3"  geom1="floor" geom2="mod_3_link"  condim="6" friction="1.35 1.35 1.35"/>
-
-    <pair name="f_mod_3_w1_link"  geom1="Wall_1" geom2="mesh3" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-
-    <pair name="f_mod_3_w2_link"  geom1="Wall_2" geom2="mesh3" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-
-    <pair name="f_mod_4"  geom1="floor" geom2="mod_4_link"  condim="6" friction="1.35 1.35 1.35"/>
-
-    <pair name="f_mod_4_w1_link"  geom1="Wall_1" geom2="mesh4" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-
-    <pair name="f_mod_4_w2_link"  geom1="Wall_2" geom2="mesh4" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-    <pair name="f_mod_5"  geom1="floor" geom2="mod_5_link"  condim="6" friction="1.35 1.35 1.35"/>
-
-    <pair name="f_mod_5_w1_link"  geom1="Wall_1" geom2="mesh5" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-    <pair name="f_mod_5_w2_link"  geom1="Wall_2" geom2="mesh5" condim="3" friction="1.35 1.35 1.35" solimp="0.9 0.95 0.001" solref="0.02 1"/>
-
-  </contact>
   </mujoco>
