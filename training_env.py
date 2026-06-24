@@ -10,8 +10,8 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from pointnet2_utils import PointNetSetAbstraction
 import mujoco
 import mujoco.viewer
-import time
 from scipy.spatial.transform import Rotation
+from scipy.spatial import ConvexHull
 from point_cloud_compression import closest_point_filter
 
 global POINT_CLOUD_DIM
@@ -131,27 +131,21 @@ class CreviceEnv(gym.Env):
         # mj_contactForce returns [normal, friction_x, friction_y, torque_x, torque_y, torque_z]
         # all in the contact frame. Only the normal component defines the friction cone axis.
         contact_forces = []
-        for i, idx in enumerate(wall_contact_ids):
+        contact_displacements = []
+        for idx in wall_contact_ids:
             contact_wrench = np.zeros(6, dtype=np.float64)
             mujoco.mj_contactForce(self.model, self.data, idx, contact_wrench)
-            contact_forces.append(contact_wrench[0])  # normal force only
+            world_frame_contact_force = self.data.contact[idx].frame.reshape(3, 3)[0, :]
+            contact_forces.append(world_frame_contact_force)
+            contact_displacements.append(self.data.contact[idx].pos)
 
         # Build final elements and return
-        reward = self.generate_reward(contact_forces)
+        reward = self.generate_reward(contact_forces, contact_displacements)
         observation = self.shifted_point_cloud.astype(np.float32)
         info = {}
         return observation, reward, True, False, info
     
-    def generate_reward(self, contact_forces, friction_coeff=0.5):
-        # Sum max friction force per contact (linear in normal force, avoids cubic cone volume scaling)
-        total_friction = sum(friction_coeff * abs(f) for f in contact_forces)
-
-        module_mass = 0.255
-        center_tether_mass = 0.5
-        robot_weight = (module_mass * 18 + center_tether_mass) * 9.80665
-
-        total_reward = (total_friction - robot_weight) / robot_weight
-
+    def generate_reward(self, contact_forces, contact_displacements):
         """
         Next steps for reward:
         Primary term should be minimum inscribed hypersphere within admissible wrench hull
@@ -159,8 +153,41 @@ class CreviceEnv(gym.Env):
         Need to add kill term if bodies are physcially overlapping
         Finally as a last metric reward reachability
         """
+        vectors_per_cone = 10
+        linearized_friction_cones = self.linearize_friction_cones(contact_forces, vectors_per_cone)
 
-        return total_reward
+    def linearize_friction_cones(self, contact_forces, n_vectors, friction_coeff=0.5):
+        cones = []
+        for force in contact_forces:
+            cone_points = []
+
+            rand_vec_1 = np.random.rand(3, 1)
+            rand_vec_2 = np.random.rand(3, 1)
+            perp_vec_1 = np.cross(cone_points, rand_vec_1)
+            perp_vec_2 = np.cross(cone_points, rand_vec_2)
+            while perp_vec_1 < 1e-4 or perp_vec_2 < 1e-4:
+                rand_vec_1 = np.random.rand(3, 1)
+                rand_vec_2 = np.random.rand(3, 1)
+                perp_vec_1 = np.cross(cone_points, rand_vec_1)
+                perp_vec_2 = np.cross(cone_points, rand_vec_2)
+
+            basis_vector_1 = rand_vec_1 - ((force.T @ rand_vec_1) / (force.T @ force)) * force
+            basis_vector_1 = basis_vector_1 * (1 / np.norm(basis_vector_1))
+
+            basis_vector_2 = rand_vec_2 - ((force.T @ rand_vec_2) / (force.T @ force)) * force - \
+                                          ((basis_vector_1.T @ rand_vec_2) / (basis_vector_1 @ basis_vector_1)) * basis_vector_1
+            basis_vector_2 = basis_vector_2 * (1 / np.norm(basis_vector_2))
+            
+            for i in range(n_vectors):
+                inc = 2 * np.pi / n_vectors
+                angle = i * inc
+                norm_vec = basis_vector_1 * np.cos(angle) + basis_vector_2 * np.sin(angle)
+                friction_vec = (friction_coeff * np.norm(force)) * norm_vec
+
+                friction_cone_element = force + friction_vec
+                cone_points.append(friction_cone_element)
+
+            cones.append(cone_points)
     
 class PointNetExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space, D_common=128):

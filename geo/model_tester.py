@@ -2,7 +2,7 @@ import mujoco
 import mujoco.viewer
 from pathlib import Path
 
-FILE_PATH = str(Path(__file__).parent / "anchor_scenes" / "tapered_diverging_5deg_9.5cm.xml")
+FILE_PATH = str(Path(__file__).parent / "anchor_scenes" / "parallel_plates_11.0cm.xml")
 
 model = mujoco.MjModel.from_xml_path(FILE_PATH)
 data = mujoco.MjData(model)
