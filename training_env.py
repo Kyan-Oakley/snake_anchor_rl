@@ -136,7 +136,7 @@ class CreviceEnv(gym.Env):
             contact_wrench = np.zeros(6, dtype=np.float64)
             mujoco.mj_contactForce(self.model, self.data, idx, contact_wrench)
             world_frame_contact_force = self.data.contact[idx].frame.reshape(3, 3)[0, :]
-            contact_forces.append(world_frame_contact_force)
+            contact_forces.append(-1 * world_frame_contact_force)
             contact_displacements.append(self.data.contact[idx].pos)
 
         # Build final elements and return
@@ -155,6 +155,10 @@ class CreviceEnv(gym.Env):
         """
         vectors_per_cone = 10
         linearized_friction_cones = self.linearize_friction_cones(contact_forces, vectors_per_cone)
+
+        wrench_points = self.generate_wrench_points(linearized_friction_cones, contact_displacements)
+
+        wrench_hull = ConvexHull(wrench_points)
 
     def linearize_friction_cones(self, contact_forces, n_vectors, friction_coeff=0.5):
         cones = []
@@ -188,6 +192,19 @@ class CreviceEnv(gym.Env):
                 cone_points.append(friction_cone_element)
 
             cones.append(cone_points)
+
+        return cones
+    
+    def generate_wrench_points(cones, distances):
+        wrench_space = []
+        for i, linearized_friction_cone in enumerate(cones):
+            displacement = distances[i]
+            for force_vector in linearized_friction_cone:
+                torque_vector = np.cross(displacement, force_vector)
+                wrench_point = np.stack([force_vector, torque_vector])
+                wrench_space.append(wrench_point)
+            
+        return wrench_space
     
 class PointNetExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space, D_common=128):
