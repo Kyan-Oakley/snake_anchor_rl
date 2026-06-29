@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -11,7 +12,7 @@ from pointnet2_utils import PointNetSetAbstraction
 import mujoco
 import mujoco.viewer
 from scipy.spatial.transform import Rotation
-from scipy.spatial import ConvexHull
+from convex_hull import ConvexHullEval
 from point_cloud_compression import closest_point_filter
 
 global POINT_CLOUD_DIM
@@ -23,8 +24,7 @@ class CreviceEnv(gym.Env):
         
     def setup(self, enable_viewer):
         # Randomly select anchor scene
-        scenes = np.array(["parallel_plates_7.0cm",
-                  "parallel_plates_8.0cm",
+        scenes = np.array(["parallel_plates_8.0cm",
                   "parallel_plates_9.5cm",
                   "parallel_plates_11.0cm",
                   "parallel_plates_13.0cm",
@@ -33,8 +33,9 @@ class CreviceEnv(gym.Env):
                   "tapered_diverging_3deg_9.5cm",
                   "tapered_diverging_5deg_9.5cm"])
         chosen_scene = np.random.choice(scenes)
-        point_cloud_path = f"geo/point_clouds/{chosen_scene}.npy"
-        mujoco_path = f"geo/anchor_scenes/{chosen_scene}.xml"
+        _root = os.path.dirname(os.path.abspath(__file__))
+        point_cloud_path = os.path.join(_root, f"geo/point_clouds/{chosen_scene}.npy")
+        mujoco_path = os.path.join(_root, f"geo/anchor_scenes/{chosen_scene}.xml")
 
         # Create point cloud
         self.point_cloud = np.load(point_cloud_path)
@@ -153,27 +154,35 @@ class CreviceEnv(gym.Env):
         Need to add kill term if bodies are physcially overlapping
         Finally as a last metric reward reachability
         """
+        if len(contact_forces) == 0: return -5
+
         vectors_per_cone = 10
         linearized_friction_cones = self.linearize_friction_cones(contact_forces, vectors_per_cone)
 
         wrench_points = self.generate_wrench_points(linearized_friction_cones, contact_displacements)
 
-        wrench_hull = ConvexHull(wrench_points)
+        wrench_hull = ConvexHullEval(wrench_points)
+
+        max_radius = wrench_hull.max_inscribed_circle()
+
+        return max_radius
 
     def linearize_friction_cones(self, contact_forces, n_vectors, friction_coeff=0.5):
         cones = []
         for force in contact_forces:
             cone_points = []
 
-            rand_vec_1 = np.random.rand(3, 1)
-            rand_vec_2 = np.random.rand(3, 1)
-            perp_vec_1 = np.cross(cone_points, rand_vec_1)
-            perp_vec_2 = np.cross(cone_points, rand_vec_2)
+            rand_vec_1 = np.random.rand(3,)
+            rand_vec_2 = np.random.rand(3,)
+            print(np.shape(rand_vec_1), np.shape(rand_vec_2), np.shape(force))
+            perp_vec_1 = np.cross(force, rand_vec_1)
+            perp_vec_2 = np.cross(force, rand_vec_2)
             while perp_vec_1 < 1e-4 or perp_vec_2 < 1e-4:
-                rand_vec_1 = np.random.rand(3, 1)
-                rand_vec_2 = np.random.rand(3, 1)
-                perp_vec_1 = np.cross(cone_points, rand_vec_1)
-                perp_vec_2 = np.cross(cone_points, rand_vec_2)
+                rand_vec_1 = np.random.rand(3,)
+                rand_vec_2 = np.random.rand(3,)
+                print(np.shape(rand_vec_1), np.shape(rand_vec_2), np.shape(force))
+                perp_vec_1 = np.cross(force, rand_vec_1)
+                perp_vec_2 = np.cross(force, rand_vec_2)
 
             basis_vector_1 = rand_vec_1 - ((force.T @ rand_vec_1) / (force.T @ force)) * force
             basis_vector_1 = basis_vector_1 * (1 / np.norm(basis_vector_1))
@@ -195,14 +204,17 @@ class CreviceEnv(gym.Env):
 
         return cones
     
-    def generate_wrench_points(cones, distances):
-        wrench_space = []
+    def generate_wrench_points(self, cones, distances):
+        wrench_space = None
         for i, linearized_friction_cone in enumerate(cones):
             displacement = distances[i]
             for force_vector in linearized_friction_cone:
                 torque_vector = np.cross(displacement, force_vector)
                 wrench_point = np.stack([force_vector, torque_vector])
-                wrench_space.append(wrench_point)
+                if wrench_space == None:
+                    wrench_space = wrench_point
+                else:
+                    np.stack([wrench_space, wrench_point.T], axis=0)
             
         return wrench_space
     
