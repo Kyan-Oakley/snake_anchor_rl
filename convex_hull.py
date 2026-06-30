@@ -4,6 +4,5 @@ class ConvexHullEval(ConvexHull):
     def __init__(self, points):
         super().__init__(points)
 
-    def max_inscribed_circle(self):
-        for eqn in self.equations:
-            print(eqn)
+    def epsilon_metric(self):
+        return float(min(-eqn[-1] for eqn in self.equations))

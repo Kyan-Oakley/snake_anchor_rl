@@ -45,8 +45,8 @@ class CreviceEnv(gym.Env):
         self.shifted_point_cloud = np.array([self.point_cloud[i] - self.ref_point for i in range(POINT_CLOUD_DIM)])
         
         # Initialize gymnasium
-        low  = np.array([-0.7, -0.02, 0, -np.pi, -np.pi, -np.pi, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
-        high = np.array([0.7, 0.85, 0.2, np.pi, np.pi, np.pi, np.pi/2, np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
+        low  = np.array([-0.7, -0.02, 0, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
+        high = np.array([0.7, 0.85, 0.2, np.pi/2, np.pi/2, np.pi/2, np.pi/2, np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(POINT_CLOUD_DIM, 3), dtype=np.float32)
         self.action_space = spaces.Box(low=low, high=high, shape=(11,), dtype=np.float32)
 
@@ -84,8 +84,8 @@ class CreviceEnv(gym.Env):
         base_xyz = action[0:3]
         base_rpy = action[3:6]
         joint_angles = action[6:]
-        self.data.qpos[0:3] = base_xyz
-        self.data.qpos[3:7] = Rotation.from_euler("xyz", base_rpy, degrees=False).as_quat()
+        # self.data.qpos[0:3] = base_xyz
+        # self.data.qpos[3:7] = Rotation.from_euler("xyz", base_rpy, degrees=False).as_quat()
         self.data.ctrl[:] = joint_angles
 
         # Check and penalize collisions
@@ -136,9 +136,10 @@ class CreviceEnv(gym.Env):
         for idx in wall_contact_ids:
             contact_wrench = np.zeros(6, dtype=np.float64)
             mujoco.mj_contactForce(self.model, self.data, idx, contact_wrench)
-            world_frame_contact_force = self.data.contact[idx].frame.reshape(3, 3)[0, :]
+            normal_force_mag = contact_wrench[0]
+            world_frame_contact_force = self.data.contact[idx].frame.reshape(3, 3)[0, :] * normal_force_mag
             contact_forces.append(-1 * world_frame_contact_force)
-            contact_displacements.append(self.data.contact[idx].pos)
+            contact_displacements.append(self.data.contact[idx].pos - self.data.geom_xpos[1])
 
         # Build final elements and return
         reward = self.generate_reward(contact_forces, contact_displacements)
@@ -154,7 +155,7 @@ class CreviceEnv(gym.Env):
         Need to add kill term if bodies are physcially overlapping
         Finally as a last metric reward reachability
         """
-        if len(contact_forces) == 0: return -5
+        if len(contact_forces) < 3: return -5
 
         vectors_per_cone = 10
         linearized_friction_cones = self.linearize_friction_cones(contact_forces, vectors_per_cone)
@@ -163,7 +164,7 @@ class CreviceEnv(gym.Env):
 
         wrench_hull = ConvexHullEval(wrench_points)
 
-        max_radius = wrench_hull.max_inscribed_circle()
+        max_radius = wrench_hull.epsilon_metric()
 
         return max_radius
 
@@ -174,28 +175,26 @@ class CreviceEnv(gym.Env):
 
             rand_vec_1 = np.random.rand(3,)
             rand_vec_2 = np.random.rand(3,)
-            print(np.shape(rand_vec_1), np.shape(rand_vec_2), np.shape(force))
             perp_vec_1 = np.cross(force, rand_vec_1)
             perp_vec_2 = np.cross(force, rand_vec_2)
-            while perp_vec_1 < 1e-4 or perp_vec_2 < 1e-4:
+            while np.linalg.norm(perp_vec_1) < 1e-4 or np.linalg.norm(perp_vec_2) < 1e-4:
                 rand_vec_1 = np.random.rand(3,)
                 rand_vec_2 = np.random.rand(3,)
-                print(np.shape(rand_vec_1), np.shape(rand_vec_2), np.shape(force))
                 perp_vec_1 = np.cross(force, rand_vec_1)
                 perp_vec_2 = np.cross(force, rand_vec_2)
 
             basis_vector_1 = rand_vec_1 - ((force.T @ rand_vec_1) / (force.T @ force)) * force
-            basis_vector_1 = basis_vector_1 * (1 / np.norm(basis_vector_1))
+            basis_vector_1 = basis_vector_1 * (1 / np.linalg.norm(basis_vector_1))
 
             basis_vector_2 = rand_vec_2 - ((force.T @ rand_vec_2) / (force.T @ force)) * force - \
                                           ((basis_vector_1.T @ rand_vec_2) / (basis_vector_1 @ basis_vector_1)) * basis_vector_1
-            basis_vector_2 = basis_vector_2 * (1 / np.norm(basis_vector_2))
+            basis_vector_2 = basis_vector_2 * (1 / np.linalg.norm(basis_vector_2))
             
             for i in range(n_vectors):
                 inc = 2 * np.pi / n_vectors
                 angle = i * inc
                 norm_vec = basis_vector_1 * np.cos(angle) + basis_vector_2 * np.sin(angle)
-                friction_vec = (friction_coeff * np.norm(force)) * norm_vec
+                friction_vec = (friction_coeff * np.linalg.norm(force)) * norm_vec
 
                 friction_cone_element = force + friction_vec
                 cone_points.append(friction_cone_element)
@@ -205,17 +204,15 @@ class CreviceEnv(gym.Env):
         return cones
     
     def generate_wrench_points(self, cones, distances):
-        wrench_space = None
+        wrench_points = []
         for i, linearized_friction_cone in enumerate(cones):
             displacement = distances[i]
             for force_vector in linearized_friction_cone:
                 torque_vector = np.cross(displacement, force_vector)
-                wrench_point = np.stack([force_vector, torque_vector])
-                if wrench_space == None:
-                    wrench_space = wrench_point
-                else:
-                    np.stack([wrench_space, wrench_point.T], axis=0)
-            
+                wrench_point = np.concatenate((force_vector, torque_vector), axis=None)
+                wrench_points.append(wrench_point)
+        
+        wrench_space = np.array(wrench_points)          
         return wrench_space
     
 class PointNetExtractor(BaseFeaturesExtractor):
