@@ -11,7 +11,7 @@
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
 
-    <body name="mod_head_body" pos="0 0 0.1" euler="0 -1.57079633 0">
+    <body name="mod_head_body" pos="0.04 0 0.1" euler="0 -1.57079633 0">
       <joint name="mod_head_freejoint" type="free" damping="5.0"/>
       <inertial pos="0 0 0" mass="0.250" diaginertia="0.0003126 0.0003126 0.0001051"/>
       <geom name="mesh_head" type="mesh" mesh="J_mesh" pos="0 0 0" material="yellow_light" contype="2" conaffinity="1" group="0"/>

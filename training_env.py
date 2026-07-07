@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -84,8 +85,8 @@ class CreviceEnv(gym.Env):
         base_xyz = action[0:3]
         base_rpy = action[3:6]
         joint_angles = action[6:]
-        # self.data.qpos[0:3] = base_xyz
-        # self.data.qpos[3:7] = Rotation.from_euler("xyz", base_rpy, degrees=False).as_quat()
+        self.data.qpos[0:3] = base_xyz
+        self.data.qpos[3:7] = Rotation.from_euler("xyz", base_rpy, degrees=False).as_quat()
         self.data.ctrl[:] = joint_angles
 
         # Check and penalize collisions
@@ -138,13 +139,16 @@ class CreviceEnv(gym.Env):
             mujoco.mj_contactForce(self.model, self.data, idx, contact_wrench)
             normal_force_mag = contact_wrench[0]
             world_frame_contact_force = self.data.contact[idx].frame.reshape(3, 3)[0, :] * normal_force_mag
-            contact_forces.append(-1 * world_frame_contact_force)
-            contact_displacements.append(self.data.contact[idx].pos - self.data.geom_xpos[1])
+            if np.linalg.norm(world_frame_contact_force) > 1e-4:
+                contact_forces.append(-1 * world_frame_contact_force)
+                contact_displacements.append(self.data.contact[idx].pos - self.data.geom_xpos[1])
 
         # Build final elements and return
         reward = self.generate_reward(contact_forces, contact_displacements)
+        if reward != -5: print(f"Action: {action}\n\nReward: {reward}")
         observation = self.shifted_point_cloud.astype(np.float32)
         info = {}
+
         return observation, reward, True, False, info
     
     def generate_reward(self, contact_forces, contact_displacements):
@@ -153,7 +157,7 @@ class CreviceEnv(gym.Env):
         Primary term should be minimum inscribed hypersphere within admissible wrench hull
         Secondary term penalizing bad base joint pose
         Need to add kill term if bodies are physcially overlapping
-        Finally as a last metric reward reachability
+        Finally as a last metric reward a larger reaching configuration space
         """
         if len(contact_forces) < 3: return -5
 
@@ -163,9 +167,8 @@ class CreviceEnv(gym.Env):
         wrench_points = self.generate_wrench_points(linearized_friction_cones, contact_displacements)
 
         wrench_hull = ConvexHullEval(wrench_points)
-
         max_radius = wrench_hull.epsilon_metric()
-
+        
         return max_radius
 
     def linearize_friction_cones(self, contact_forces, n_vectors, friction_coeff=0.5):
@@ -297,7 +300,8 @@ else:
         learning_starts=1000,
         learning_rate=1e-4,
         verbose=1,
-        batch_size=128
+        batch_size=128,
+        device="cuda"
     )
 
     # Clip gradients on every backward pass to prevent NaN from exploding gradients

@@ -13,7 +13,7 @@
   <worldbody>
   <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
 
-        <body name="mod_0_in" pos="-0.0254 0 0.04">
+        <body name="mod_0_in" pos="0.0254 0 0.04">
         <joint name="mod_0_freejoint" type="free" damping="5.0"/>
 
         <geom name = "mod_0_in" type="cylinder" size="0.017018000000000002 0.0127" pos ="0.0254 0.018796 0.01651" euler="1.57079632679 0 0" material="red" 
