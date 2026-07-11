@@ -237,7 +237,8 @@ else:
         learning_rate=1e-4,
         verbose=1,
         batch_size=128,
-        device="cuda"
+        device="cuda",
+        tensorboard_log="./training_logs/RL/"
     )
 
     # Clip gradients on every backward pass to prevent NaN from exploding gradients
@@ -246,7 +247,7 @@ else:
             param.register_hook(_clip_grad)
 
     checkpoint_callback = CheckpointCallback(
-        save_freq = 10_000,
+        save_freq = 3_000,
         save_path = "agent/checkpoints/",
         name_prefix = "jam_net"
     )
