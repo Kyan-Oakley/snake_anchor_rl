@@ -1,49 +1,53 @@
+
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-from jam_net_model import PointNetExtractor
-from stable_baselines3 import SAC
-from stable_baselines3.common.callbacks import CheckpointCallback
 import mujoco
 import mujoco.viewer
 from scipy.spatial.transform import Rotation
 from convex_hull import ConvexHullEval
 from point_cloud_compression import closest_point_filter
 
-global POINT_CLOUD_DIM
-POINT_CLOUD_DIM = 1024
-
 class CreviceEnv(gym.Env):
-    def __init__(self, enable_viewer = False):
+    def __init__(self, enable_viewer = False, freeze_after_action = False, point_cloud_dim = 1024):
+        self.freeze_after_action = freeze_after_action
+        self.point_cloud_dim = point_cloud_dim
         self.setup(enable_viewer)
-        
+
     def setup(self, enable_viewer):
         # Randomly select anchor scene
         scenes = np.array(["parallel_plates_8.0cm",
-                  "parallel_plates_9.5cm",
-                  "parallel_plates_11.0cm",
-                  "parallel_plates_13.0cm",
-                  "tapered_converging_3deg_9.5cm",
-                  "tapered_converging_5deg_9.5cm",
-                  "tapered_diverging_3deg_9.5cm",
-                  "tapered_diverging_5deg_9.5cm"])
+                           "parallel_plates_9.5cm",
+                           "parallel_plates_11.0cm",
+                           "parallel_plates_13.0cm",
+                           "tapered_converging_3deg_9.5cm",
+                           "tapered_converging_5deg_9.5cm",
+                           "tapered_diverging_3deg_9.5cm",
+                           "tapered_diverging_5deg_9.5cm"])
         chosen_scene = np.random.choice(scenes)
         _root = os.path.dirname(os.path.abspath(__file__))
-        point_cloud_path = os.path.join(_root, f"geo/point_clouds/{chosen_scene}.npy")
-        mujoco_path = os.path.join(_root, f"geo/anchor_scenes/{chosen_scene}.xml")
+        point_cloud_path = os.path.join(_root, f"../geo/point_clouds/{chosen_scene}.npy")
+        mujoco_path = os.path.join(_root, f"../geo/anchor_scenes/{chosen_scene}.xml")
 
         # Create point cloud
         self.point_cloud = np.load(point_cloud_path)
-        self.point_cloud = closest_point_filter(self.point_cloud, POINT_CLOUD_DIM)
+        self.point_cloud = closest_point_filter(self.point_cloud, self.point_cloud_dim)
         self.ref_point = np.array([-0.0254, 0, 0.04])
 
-        self.shifted_point_cloud = np.array([self.point_cloud[i] - self.ref_point for i in range(POINT_CLOUD_DIM)])
+        self.shifted_point_cloud = np.array([self.point_cloud[i] - self.ref_point for i in range(self.point_cloud_dim)])
         
         # Initialize gymnasium
-        low  = np.array([-0.7, -0.02, 0, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
-        high = np.array([0.7, 0.85, 0.2, np.pi/2, np.pi/2, np.pi/2, np.pi/2, np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(POINT_CLOUD_DIM, 3), dtype=np.float32)
+        # base x/y bounds are sized to the crevice point-cloud extents (~+-0.075m across all
+        # scenes) plus a small approach margin, not the full workspace, so sampled base poses
+        # actually land near the walls instead of missing the crevice entirely.
+        low  = np.array([-0.10, -0.15, 0, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
+        high = np.array([0.10, 0.15, 0.2, np.pi/2, np.pi/2, np.pi/2, np.pi/2, np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.point_cloud_dim, 3), dtype=np.float32)
         self.action_space = spaces.Box(low=low, high=high, shape=(11,), dtype=np.float32)
 
         # Initialize Mujoco
@@ -86,6 +90,8 @@ class CreviceEnv(gym.Env):
 
         # Check and penalize collisions
         mujoco.mj_forward(self.model, self.data)
+        if self.enable_viewer:
+            self.viewer.sync()
 
         for i in range(self.data.ncon):
             if self.data.contact[i].dist < -0.005:  # 5mm penetration threshold
@@ -98,7 +104,7 @@ class CreviceEnv(gym.Env):
 
         for i in range(N_max):
             mujoco.mj_step(self.model, self.data)
-            if self.enable_viewer:
+            if self.enable_viewer and not self.freeze_after_action:
                 self.viewer.sync()
             if np.any(np.isnan(self.data.qpos)) or np.any(np.abs(self.data.qpos) > 1e6):
                 return self.shifted_point_cloud.astype(np.float32), -10, True, False, {}
@@ -139,14 +145,14 @@ class CreviceEnv(gym.Env):
                 contact_displacements.append(self.data.contact[idx].pos - self.data.geom_xpos[1])
 
         # Build final elements and return
-        reward = self.generate_reward(contact_forces, contact_displacements)
-        if reward != -5: print(f"Action: {action}\n\nReward: {reward}")
+        reward = self.generate_reward(contact_forces, contact_displacements, base_xyz)
+        if len(contact_forces) >= 3: print(f"Action: {action}\n\nReward: {reward}")
         observation = self.shifted_point_cloud.astype(np.float32)
         info = {}
 
         return observation, reward, True, False, info
     
-    def generate_reward(self, contact_forces, contact_displacements):
+    def generate_reward(self, contact_forces, contact_displacements, base_xyz):
         """
         Next steps for reward:
         Primary term should be minimum inscribed hypersphere within admissible wrench hull
@@ -154,7 +160,12 @@ class CreviceEnv(gym.Env):
         Need to add kill term if bodies are physcially overlapping
         Finally as a last metric reward a larger reaching configuration space
         """
-        if len(contact_forces) < 3: return -5
+        if len(contact_forces) < 3:
+            # Dense shaping so the critic sees a gradient before the sparse >=3-contact
+            # regime is ever reached: reward more contacts and a closer approach to the
+            # crevice instead of a flat -5 for every non-qualifying configuration.
+            dist_to_wall = np.min(np.linalg.norm(self.point_cloud - base_xyz, axis=1))
+            return -5.0 + len(contact_forces) - dist_to_wall
 
         vectors_per_cone = 10
         linearized_friction_cones = self.linearize_friction_cones(contact_forces, vectors_per_cone)
@@ -212,46 +223,3 @@ class CreviceEnv(gym.Env):
         
         wrench_space = np.array(wrench_points)          
         return wrench_space
-    
-def _clip_grad(grad):
-    return grad.clamp(-5.0, 5.0) if grad is not None else grad
-
-load_model = False
-
-env = CreviceEnv()
-
-if load_model:
-    model = SAC.load("agent/checkpoints/sac_snake_10000_steps", env=env) # Change to the desired checkpoint
-else:
-    policy_kwargs = dict(
-        features_extractor_class = PointNetExtractor,
-        features_extractor_kwargs = dict(D_common=128),
-        net_arch = dict(pi = [256, 256], qf = [256, 256])
-    )
-
-    model = SAC(
-        "MlpPolicy",
-        env,
-        policy_kwargs=policy_kwargs,
-        learning_starts=1000,
-        learning_rate=1e-4,
-        verbose=1,
-        batch_size=128,
-        device="cuda",
-        tensorboard_log="./training_logs/RL/"
-    )
-
-    # Clip gradients on every backward pass to prevent NaN from exploding gradients
-    for param in model.policy.parameters():
-        if param.requires_grad:
-            param.register_hook(_clip_grad)
-
-    checkpoint_callback = CheckpointCallback(
-        save_freq = 3_000,
-        save_path = "agent/checkpoints/",
-        name_prefix = "jam_net"
-    )
-
-# Set timesteps based on how far through training and how much more training is needed
-model.learn(total_timesteps = 1_000_000, callback = checkpoint_callback)
-model.save("agent/sac_snake_final")
