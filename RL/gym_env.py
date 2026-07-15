@@ -42,11 +42,13 @@ class CreviceEnv(gym.Env):
         self.shifted_point_cloud = np.array([self.point_cloud[i] - self.ref_point for i in range(self.point_cloud_dim)])
         
         # Initialize gymnasium
-        # base x/y bounds are sized to the crevice point-cloud extents (~+-0.075m across all
-        # scenes) plus a small approach margin, not the full workspace, so sampled base poses
-        # actually land near the walls instead of missing the crevice entirely.
-        low  = np.array([-0.10, -0.15, 0, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
-        high = np.array([0.10, 0.15, 0.2, np.pi/2, np.pi/2, np.pi/2, np.pi/2, np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
+        # base xyz bounds are expressed in the base's own initial-pose (qpos0) frame, not
+        # MuJoCo world coordinates -- see step()'s mju_mulPose composition. They're the same
+        # reachable region as the old world-frame box (crevice point-cloud extents, ~+-0.075m,
+        # plus a small approach margin), just remapped through qpos0's orientation: local x
+        # <-> world z, local y <-> world y, local z <-> -world x.
+        low  = np.array([-0.10, -0.15, -0.06, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2, -np.pi/2], dtype=np.float32)
+        high = np.array([0.10, 0.15, 0.14, np.pi/2, np.pi/2, np.pi/2, np.pi/2, np.pi/2,  np.pi/2,  np.pi/2,  np.pi/2], dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.point_cloud_dim, 3), dtype=np.float32)
         self.action_space = spaces.Box(low=low, high=high, shape=(11,), dtype=np.float32)
 
@@ -65,6 +67,31 @@ class CreviceEnv(gym.Env):
                                 mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'Wall_2'),
                              }
 
+        # Precompute the crevice's inward-facing half-spaces from every Wall_* geom in
+        # this scene (2 walls for parallel/tapered-x scenes, 4 for fully-enclosed ones).
+        # Walls are static (no joints), so this only needs to be done once per scene:
+        # mj_forward here just populates geom_xpos/geom_xmat for the default pose.
+        mujoco.mj_forward(self.model, self.data)
+        self.wall_halfspaces = []
+        for gid in range(self.model.ngeom):
+            name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, gid)
+            if name is None or not name.startswith("Wall_"):
+                continue
+            size = self.model.geom_size[gid]
+            thin_axis = int(np.argmin(size[:2]))  # walls are thin plates: x or y half-extent
+            half_extent = size[thin_axis]
+            center = self.data.geom_xpos[gid].copy()
+            axis_world = self.data.geom_xmat[gid].reshape(3, 3)[:, thin_axis].copy()
+            face_plus = center + half_extent * axis_world
+            face_minus = center - half_extent * axis_world
+            # The inner face is whichever side sits closer to the crevice centerline;
+            # the inward normal continues in the same direction that reached it from center.
+            if np.linalg.norm(face_plus[:2]) < np.linalg.norm(face_minus[:2]):
+                inner_face, inward_normal = face_plus, axis_world
+            else:
+                inner_face, inward_normal = face_minus, -axis_world
+            self.wall_halfspaces.append((inner_face, inward_normal))
+
     def reset(self, seed=None):
         # Hard reset to change the crevice after 10 reps, otherwise reset the snake
         if self.counter == 5:
@@ -80,15 +107,36 @@ class CreviceEnv(gym.Env):
         return observation, info
 
     def step(self, action):
-        # Set joint angles in mujoco
-        base_xyz = action[0:3]
-        base_rpy = action[3:6]
+        # The network outputs the base pose as an SE3 offset in the base's own initial-pose
+        # frame (qpos0) rather than raw MuJoCo world coordinates -- the real robot only ever
+        # knows its own rest frame, not MuJoCo's world origin, so this is what transfers.
+        # Compose that local offset onto the reference pose to get the world-frame pose MuJoCo
+        # needs for qpos.
+        base_xyz_local = action[0:3]
+        base_rpy_local = action[3:6]
         joint_angles = action[6:]
-        self.data.qpos[0:3] = base_xyz
-        self.data.qpos[3:7] = Rotation.from_euler("xyz", base_rpy, degrees=False).as_quat()
+
+        pos_ref = self.model.qpos0[0:3]
+        quat_ref = self.model.qpos0[3:7]
+        quat_local = Rotation.from_euler("xyz", base_rpy_local, degrees=False).as_quat(scalar_first=True)
+
+        pos_world = np.zeros(3)
+        quat_world = np.zeros(4)
+        mujoco.mju_mulPose(pos_world, quat_world, pos_ref, quat_ref, base_xyz_local, quat_local)
+
+        self.data.qpos[0:3] = pos_world
+        self.data.qpos[3:7] = quat_world
+        self.data.qpos[7:] = joint_angles
         self.data.ctrl[:] = joint_angles
 
-        # Check and penalize collisions
+        # Reject base placements outside the crevice mouth before spending any sim time on them.
+        if not self._base_within_crevice(pos_world):
+            return self.shifted_point_cloud.astype(np.float32), -10, True, False, {}
+
+        # Check and penalize collisions. qpos was just teleported to the commanded base+joint
+        # pose (actuators haven't had time to integrate toward ctrl yet), so this judges the
+        # actual commanded configuration rather than whatever pose was left over from the last
+        # reset/step -- otherwise a fitting bent shape gets rejected for the stale straight one.
         mujoco.mj_forward(self.model, self.data)
         if self.enable_viewer:
             self.viewer.sync()
@@ -145,13 +193,16 @@ class CreviceEnv(gym.Env):
                 contact_displacements.append(self.data.contact[idx].pos - self.data.geom_xpos[1])
 
         # Build final elements and return
-        reward = self.generate_reward(contact_forces, contact_displacements, base_xyz)
+        reward = self.generate_reward(contact_forces, contact_displacements, pos_world)
         if len(contact_forces) >= 3: print(f"Action: {action}\n\nReward: {reward}")
         observation = self.shifted_point_cloud.astype(np.float32)
         info = {}
 
         return observation, reward, True, False, info
     
+    def _base_within_crevice(self, base_xyz):
+        return all(np.dot(base_xyz - point, normal) >= 0 for point, normal in self.wall_halfspaces)
+
     def generate_reward(self, contact_forces, contact_displacements, base_xyz):
         """
         Next steps for reward:

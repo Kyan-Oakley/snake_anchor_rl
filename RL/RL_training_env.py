@@ -11,9 +11,9 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 def _clip_grad(grad):
     return grad.clamp(-5.0, 5.0) if grad is not None else grad
 
-load_model = True
+load_model = False
 
-env = CreviceEnv()
+env = CreviceEnv(enable_viewer = True)
 
 if load_model:
     model = SAC.load("agent/checkpoints/jam_net_9000_steps", env=env) # Change to the desired checkpoint
@@ -31,7 +31,7 @@ else:
         learning_starts=1000,
         learning_rate=1e-4,
         verbose=1,
-        batch_size=128,
+        batch_size=140,
         device="cuda",
         tensorboard_log="training_logs/"
     )
