@@ -13,7 +13,7 @@ def _clip_grad(grad):
 
 load_model = False
 
-env = CreviceEnv(enable_viewer = True)
+env = CreviceEnv()
 
 if load_model:
     model = SAC.load("agent/checkpoints/jam_net_9000_steps", env=env) # Change to the desired checkpoint

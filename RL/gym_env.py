@@ -93,7 +93,7 @@ class CreviceEnv(gym.Env):
             self.wall_halfspaces.append((inner_face, inward_normal))
 
     def reset(self, seed=None):
-        # Hard reset to change the crevice after 10 reps, otherwise reset the snake
+        # Hard reset to change the crevice after 5 reps, otherwise reset the snake
         if self.counter == 5:
             self.counter = 0
             self.setup(self.enable_viewer)
@@ -130,8 +130,9 @@ class CreviceEnv(gym.Env):
         self.data.ctrl[:] = joint_angles
 
         # Reject base placements outside the crevice mouth before spending any sim time on them.
-        if not self._base_within_crevice(pos_world):
-            return self.shifted_point_cloud.astype(np.float32), -10, True, False, {}
+        max_dist = self._base_within_crevice(pos_world)
+        if max_dist < 0:
+            return self.shifted_point_cloud.astype(np.float32), 10 * max_dist - 3, True, False, {}
 
         # Check and penalize collisions. qpos was just teleported to the commanded base+joint
         # pose (actuators haven't had time to integrate toward ctrl yet), so this judges the
@@ -201,7 +202,7 @@ class CreviceEnv(gym.Env):
         return observation, reward, True, False, info
     
     def _base_within_crevice(self, base_xyz):
-        return all(np.dot(base_xyz - point, normal) >= 0 for point, normal in self.wall_halfspaces)
+        return max(np.dot(base_xyz - point, normal) for point, normal in self.wall_halfspaces)
 
     def generate_reward(self, contact_forces, contact_displacements, base_xyz):
         """
@@ -216,7 +217,7 @@ class CreviceEnv(gym.Env):
             # regime is ever reached: reward more contacts and a closer approach to the
             # crevice instead of a flat -5 for every non-qualifying configuration.
             dist_to_wall = np.min(np.linalg.norm(self.point_cloud - base_xyz, axis=1))
-            return -5.0 + len(contact_forces) - dist_to_wall
+            return -1 - dist_to_wall
 
         vectors_per_cone = 10
         linearized_friction_cones = self.linearize_friction_cones(contact_forces, vectors_per_cone)
