@@ -1,0 +1,11 @@
+numpy==2.4.6
+scipy==1.17.1
+matplotlib==3.10.9
+mujoco==3.9.0
+gymnasium==1.2.3
+stable-baselines3==2.8.0
+
+# CUDA 13.2 builds -- install via:
+#   pip install torch==2.12.0 torchvision==0.27.0 --index-url https://download.pytorch.org/whl/cu132
+torch==2.12.0
+torchvision==0.27.0
