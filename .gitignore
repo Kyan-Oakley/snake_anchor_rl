@@ -1,3 +1,5 @@
 /.vscode/
-/__pycach__/
-/RL/__pycache__/
+__pycache__/
+*.pyc
+RL/agent/checkpoints/
+RL/training_logs/
