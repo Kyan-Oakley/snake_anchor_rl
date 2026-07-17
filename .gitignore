@@ -1,5 +1,5 @@
 /.vscode/
 __pycache__/
 *.pyc
-RL/agent/checkpoints/
-RL/training_logs/
+/static_RL/agent/
+/static_RL/training_logs/

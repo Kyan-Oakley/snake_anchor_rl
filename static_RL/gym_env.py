@@ -84,6 +84,7 @@ class CreviceEnv(gym.Env):
             axis_world = self.data.geom_xmat[gid].reshape(3, 3)[:, thin_axis].copy()
             face_plus = center + half_extent * axis_world
             face_minus = center - half_extent * axis_world
+
             # The inner face is whichever side sits closer to the crevice centerline;
             # the inward normal continues in the same direction that reached it from center.
             if np.linalg.norm(face_plus[:2]) < np.linalg.norm(face_minus[:2]):
@@ -172,6 +173,7 @@ class CreviceEnv(gym.Env):
         geom2 = self.data.contact.geom2[:ncon]
         seen_pairs = set()
         wall_contact_ids = []
+
         for i, (g1, g2) in enumerate(zip(geom1.tolist(), geom2.tolist())):
             if (g1 in self.wall_geom_ids) or (g2 in self.wall_geom_ids):
                 pair = (g1, g2)
@@ -189,6 +191,7 @@ class CreviceEnv(gym.Env):
             mujoco.mj_contactForce(self.model, self.data, idx, contact_wrench)
             normal_force_mag = contact_wrench[0]
             world_frame_contact_force = self.data.contact[idx].frame.reshape(3, 3)[0, :] * normal_force_mag
+            
             if np.linalg.norm(world_frame_contact_force) > 1e-4:
                 contact_forces.append(-1 * world_frame_contact_force)
                 contact_displacements.append(self.data.contact[idx].pos - self.data.geom_xpos[1])
@@ -234,16 +237,19 @@ class CreviceEnv(gym.Env):
         for force in contact_forces:
             cone_points = []
 
+            # Find random perpendicular vectors
             rand_vec_1 = np.random.rand(3,)
             rand_vec_2 = np.random.rand(3,)
             perp_vec_1 = np.cross(force, rand_vec_1)
             perp_vec_2 = np.cross(force, rand_vec_2)
+
             while np.linalg.norm(perp_vec_1) < 1e-4 or np.linalg.norm(perp_vec_2) < 1e-4:
                 rand_vec_1 = np.random.rand(3,)
                 rand_vec_2 = np.random.rand(3,)
                 perp_vec_1 = np.cross(force, rand_vec_1)
                 perp_vec_2 = np.cross(force, rand_vec_2)
 
+            # Gram-Schmidt Process to orthonormalize basis
             basis_vector_1 = rand_vec_1 - ((force.T @ rand_vec_1) / (force.T @ force)) * force
             basis_vector_1 = basis_vector_1 * (1 / np.linalg.norm(basis_vector_1))
 
@@ -251,6 +257,7 @@ class CreviceEnv(gym.Env):
                                           ((basis_vector_1.T @ rand_vec_2) / (basis_vector_1 @ basis_vector_1)) * basis_vector_1
             basis_vector_2 = basis_vector_2 * (1 / np.linalg.norm(basis_vector_2))
             
+            # Linearize cone
             for i in range(n_vectors):
                 inc = 2 * np.pi / n_vectors
                 angle = i * inc
@@ -265,9 +272,11 @@ class CreviceEnv(gym.Env):
         return cones
     
     def generate_wrench_points(self, cones, distances):
+        # Given forces and distances, generate the wrench of each cone
         wrench_points = []
         for i, linearized_friction_cone in enumerate(cones):
             displacement = distances[i]
+
             for force_vector in linearized_friction_cone:
                 torque_vector = np.cross(displacement, force_vector)
                 wrench_point = np.concatenate((force_vector, torque_vector), axis=None)
