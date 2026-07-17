@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 /static_RL/agent/
 /static_RL/training_logs/
+/.claude/

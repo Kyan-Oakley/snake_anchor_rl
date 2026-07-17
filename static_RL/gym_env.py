@@ -133,7 +133,7 @@ class CreviceEnv(gym.Env):
         # Reject base placements outside the crevice mouth before spending any sim time on them.
         max_dist = self._base_within_crevice(pos_world)
         if max_dist < 0:
-            return self.shifted_point_cloud.astype(np.float32), 10 * max_dist - 3, True, False, {}
+            return self.shifted_point_cloud.astype(np.float32), -10 * max_dist - 3, True, False, {}
 
         # Check and penalize collisions. qpos was just teleported to the commanded base+joint
         # pose (actuators haven't had time to integrate toward ctrl yet), so this judges the
