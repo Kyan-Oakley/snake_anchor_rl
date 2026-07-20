@@ -127,13 +127,13 @@ class CreviceEnv(gym.Env):
 
         self.data.qpos[0:3] = pos_world
         self.data.qpos[3:7] = quat_world
-        self.data.qpos[7:] = joint_angles
         self.data.ctrl[:] = joint_angles
 
         # Reject base placements outside the crevice mouth before spending any sim time on them.
         max_dist = self._base_within_crevice(pos_world)
+        print(max_dist)
         if max_dist < 0:
-            return self.shifted_point_cloud.astype(np.float32), -10 * max_dist - 3, True, False, {}
+            return self.shifted_point_cloud.astype(np.float32), 10 * max_dist - 3, True, False, {}
 
         # Check and penalize collisions. qpos was just teleported to the commanded base+joint
         # pose (actuators haven't had time to integrate toward ctrl yet), so this judges the
@@ -205,7 +205,7 @@ class CreviceEnv(gym.Env):
         return observation, reward, True, False, info
     
     def _base_within_crevice(self, base_xyz):
-        return max(np.dot(base_xyz - point, normal) for point, normal in self.wall_halfspaces)
+        return min(np.dot(base_xyz - point, normal) for point, normal in self.wall_halfspaces)
 
     def generate_reward(self, contact_forces, contact_displacements, base_xyz):
         """

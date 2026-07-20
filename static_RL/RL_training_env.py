@@ -16,7 +16,11 @@ load_model = False
 env = CreviceEnv()
 
 if load_model:
-    model = SAC.load("agent/checkpoints/jam_net_9000_steps", env=env) # Change to the desired checkpoint
+    model = SAC.load("agent/checkpoints/jam_net_9000_steps", # Change to the desired checkpoint
+                     env=env,
+                     reset_num_timesteps = False,
+                     tb_log_name = "SAC" # Must be the folder of the old tensorboard logs
+                     )
 else:
     policy_kwargs = dict(
         features_extractor_class = PointNetExtractor,
